@@ -1,5 +1,7 @@
 # MProfiler
 
+![alt text](image.png)
+
 MProfiler is an evidence-first profiler for Solidity storage workloads on Monad-compatible EVM contracts.
 
 It gives developers one practical workflow:
