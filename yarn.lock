@@ -4490,7 +4490,7 @@ __metadata:
     type-fest: ~4.26.1
     typescript: ~5.8.2
     usehooks-ts: ~3.1.0
-    vercel: latest
+    vercel: ^63.1.2
     viem: 2.31.1
     wagmi: 2.15.6
     zustand: ~5.0.0
@@ -18829,7 +18829,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"vercel@npm:latest":
+"vercel@npm:^63.1.2":
   version: 63.1.2
   resolution: "vercel@npm:63.1.2"
   dependencies:
