@@ -4,6 +4,8 @@
 
 MProfiler is an evidence-first profiler for Solidity storage workloads on Monad-compatible EVM contracts.
 
+Built on **Scaffold-ETH 2**, MProfiler uses its Next.js, Hardhat, wallet-connection, network-switching, contract-deployment, and block-explorer foundations. The product layer adds an isolated profiling worker, Solidity workload runner, storage-trace parser, comparison flow, AI handoff, and Monad verification path.
+
 - **Live deployment:** [Open MProfiler](https://nextjs-eight-liard-18.vercel.app)
 - **Profile a contract:** [Open the profiler workspace](https://nextjs-eight-liard-18.vercel.app/profile)
 - **3-minute product demo:** [Watch on YouTube](https://youtu.be/E0OgbbPYkLk)
@@ -40,7 +42,7 @@ It gives developers one practical workflow:
 ```mermaid
 flowchart LR
   U[Developer] --> W[Browser wallet<br/>Monad Testnet]
-  U --> D[Next.js dashboard<br/>Vercel]
+  U --> D[Scaffold-ETH 2 dashboard<br/>Next.js on Vercel]
   D -->|server-only bearer token| R[Profiler worker<br/>Render]
   R --> H[Disposable local<br/>Hardhat EVM]
   H --> T[Receipt gas +<br/>execution traces]
@@ -73,6 +75,15 @@ The report remains off-chain, where it can retain the source hash, compiler vers
 Anyone can fetch the evidence URI, recompute the hash, read the `ProfileAttested` event, and compare it to the on-chain record. This creates a public proof of **which exact report was published**, without pretending that a hash proves a performance claim by itself.
 
 The current wallet UI and Testnet checkpoint are the integration step. The Mainnet release is the next controlled deployment after the registry and public verifier have completed this same journey on Testnet. Monad Mainnet uses chain ID `143`, MON for gas, and MonadVision/MonadScan explorers; verify current network settings against the [Monad developer resources](https://github.com/monad-developers) before configuring a wallet or release.
+
+### Road to Mainnet
+
+1. **Profile locally — complete.** Scaffold-ETH 2 and Hardhat run the deterministic workload in an isolated EVM, producing receipt gas and parsed storage accesses without spending MON.
+2. **Validate the real integration on Monad Testnet — complete checkpoint.** The bounded probe deploys the fixture, submits three transactions, verifies receipts and `ReadObserved`, and captures four QuickNode traces from those new transactions.
+3. **Deploy and verify the attestation registry on Testnet — release gate.** Publish a report hash from a connected wallet, then independently recompute the hash and validate the emitted event through a public explorer.
+4. **Promote the same registry and verifier to Monad Mainnet — planned release.** Use the connected wallet on chain ID `143` to publish the hash, publisher, timestamp, and evidence URI. The profile execution remains local; Mainnet supplies the durable public proof of publication.
+
+This keeps the expensive or non-deterministic parts out of the profile measurement while still giving a reviewer an on-chain record they can inspect and verify.
 
 ### Why storage evidence matters on Monad
 
