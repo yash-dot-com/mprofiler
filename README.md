@@ -4,6 +4,9 @@
 
 MProfiler is an evidence-first profiler for Solidity storage workloads on Monad-compatible EVM contracts.
 
+**Live app:** [mprofiler.vercel.app](https://nextjs-eight-liard-18.vercel.app)  
+**3-minute product demo:** [Watch on YouTube](https://youtu.be/E0OgbbPYkLk)
+
 It gives developers one practical workflow:
 
 1. Upload a Solidity baseline and define the state-changing calls to exercise.
