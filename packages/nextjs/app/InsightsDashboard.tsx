@@ -45,6 +45,7 @@ contract ProfileWorkloads {
         emit ReadObserved(key, value);
     }
 }`;
+const insightSourceStorageKey = "mprofiler.insights.source";
 
 type ReportEvidence = {
   baseline?: {
@@ -83,6 +84,14 @@ export default function InsightsDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+
+  useEffect(() => {
+    const attachedSource = window.sessionStorage.getItem(insightSourceStorageKey);
+    if (!attachedSource) return;
+    setSource(attachedSource);
+    setReport(null);
+    window.sessionStorage.removeItem(insightSourceStorageKey);
+  }, []);
 
   useEffect(() => {
     if (!jobId) return;
@@ -157,17 +166,25 @@ export default function InsightsDashboard() {
               Compiler-style performance diagnostics
             </h1>
             <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-[#a7a5b6]">
-              Deterministic source checks are combined with available profile evidence. Inferences and recommendations
-              are kept separate from observed measurements.
+              Attach source from the completed profile or upload it here. Deterministic source checks are combined with
+              available profile evidence; inferences and recommendations stay separate from observed measurements.
             </p>
           </div>
           {jobId && (
-            <Link
-              href={`/compare?job=${jobId}`}
-              className="rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-violet-100 hover:bg-white/5"
-            >
-              Open comparison
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <Link
+                href="/"
+                className="rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-[#d8d6e1] hover:bg-white/5"
+              >
+                Back to profiler
+              </Link>
+              <Link
+                href={`/compare?job=${jobId}`}
+                className="rounded-md border border-violet-300/30 px-3 py-2 text-sm font-semibold text-violet-100 hover:bg-violet-400/[0.1]"
+              >
+                Review comparison
+              </Link>
+            </div>
           )}
         </div>
 

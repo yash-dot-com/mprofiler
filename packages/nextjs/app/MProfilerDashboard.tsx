@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { AttestationCard } from "~~/components/mprofiler/AttestationCard";
@@ -83,6 +83,8 @@ type ProfileReport = {
     note: string;
   } | null;
 };
+
+const insightSourceStorageKey = "mprofiler.insights.source";
 
 const scenarioLabels: Record<string, string> = {
   "independent-mapping-writes": "Independent mapping writes",
@@ -178,6 +180,7 @@ const MProfilerDashboard = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [activeMatrixSlot, setActiveMatrixSlot] = useState<HotSlot | null>(null);
 
   const watchJob = async (initialJob: ProfileJob) => {
     let current = initialJob;
@@ -215,6 +218,7 @@ const MProfilerDashboard = () => {
     setJob(null);
     setError(null);
     setCopyState("idle");
+    setActiveMatrixSlot(null);
     try {
       const startedJob = await readJson<ProfileJob>(
         await fetch("/api/profile/jobs", {
@@ -311,6 +315,20 @@ const MProfilerDashboard = () => {
       setCopyState("failed");
     }
   };
+  const attachSourceAndOpenInsights = async (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file || !job?.id) return;
+    if (file.size > 64_000) {
+      setError("Solidity source files must be 64 KB or smaller for the diagnostic pass.");
+      return;
+    }
+    try {
+      window.sessionStorage.setItem(insightSourceStorageKey, await file.text());
+      window.location.assign(`/insights?job=${job.id}`);
+    } catch {
+      setError("Could not attach this Solidity source for analysis.");
+    }
+  };
 
   return (
     <div className="min-h-full bg-[#07070c] text-[#f6f4ff] selection:bg-violet-500/35">
@@ -337,6 +355,30 @@ const MProfilerDashboard = () => {
               Local measurements and derived graph properties only. Monad scheduler decisions are not measured.
             </span>
           </div>
+        </section>
+
+        <section
+          aria-label="MProfiler workflow"
+          className="mt-5 grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-4"
+        >
+          {[
+            { step: "01", label: "Profile", detail: "Run deterministic local workloads", active: true },
+            { step: "02", label: "Compare", detail: "Validate identical inputs", active: Boolean(report?.comparison) },
+            { step: "03", label: "Improve", detail: "Attach source and inspect evidence", active: false },
+            { step: "04", label: "Verify", detail: "Publish Testnet report hash", active: false },
+          ].map(item => (
+            <div
+              key={item.step}
+              className={`rounded-lg border px-3 py-2.5 ${item.active ? "border-violet-300/25 bg-violet-400/[0.08]" : "border-white/8 bg-black/15"}`}
+            >
+              <p
+                className={`m-0 font-mono text-[10px] font-semibold tracking-[0.14em] ${item.active ? "text-violet-200" : "text-[#77768a]"}`}
+              >
+                {item.step} · {item.label}
+              </p>
+              <p className="mb-0 mt-1 text-xs text-[#aaa9bb]">{item.detail}</p>
+            </div>
+          ))}
         </section>
 
         <form
@@ -471,22 +513,45 @@ const MProfilerDashboard = () => {
         {baseline && (
           <>
             {job?.status === "completed" && (
-              <section className="mt-5 flex flex-wrap gap-3 rounded-xl border border-violet-300/20 bg-violet-400/[0.06] px-4 py-3">
-                <Link
-                  href={`/compare?job=${job.id}`}
-                  className="rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400"
-                >
-                  Open dedicated comparison
-                </Link>
-                <Link
-                  href={`/insights?job=${job.id}`}
-                  className="rounded-md border border-violet-300/30 px-3 py-2 text-sm font-semibold text-violet-100 hover:bg-violet-400/[0.1]"
-                >
-                  Analyze contract source
-                </Link>
+              <section className="mt-5 rounded-xl border border-violet-300/20 bg-violet-400/[0.06] p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-200">
+                      Profile complete · next steps
+                    </p>
+                    <p className="mb-0 mt-1 text-sm text-[#d8d6e1]">
+                      Continue with this exact job&apos;s evidence. The source you attach is carried into Insights.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Link
+                      href={`/compare?job=${job.id}`}
+                      className="rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400"
+                    >
+                      1. Compare revision
+                    </Link>
+                    <label className="cursor-pointer rounded-md border border-violet-300/30 px-3 py-2 text-sm font-semibold text-violet-100 hover:bg-violet-400/[0.1]">
+                      2. Upload source + analyze
+                      <input
+                        className="sr-only"
+                        type="file"
+                        accept=".sol,text/plain"
+                        onChange={attachSourceAndOpenInsights}
+                      />
+                    </label>
+                    <Link
+                      href={`/insights?job=${job.id}`}
+                      className="rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-[#d8d6e1] hover:bg-white/5"
+                    >
+                      Analyze fixture
+                    </Link>
+                  </div>
+                </div>
               </section>
             )}
-            <AttestationCard report={report} />
+            <div id="attestation">
+              <AttestationCard report={report} />
+            </div>
             {comparison && !comparison.workloadIdentical && (
               <p
                 role="alert"
@@ -701,30 +766,55 @@ const MProfilerDashboard = () => {
                   </p>
                   <h2 className="mb-0 mt-2 text-lg font-semibold text-white">Observed access matrix</h2>
                   {heatMapSlots.length > 0 ? (
-                    <div className="mt-5 space-y-3">
-                      {heatMapSlots.map((slot, index) => (
-                        <div
-                          key={`${slot.scenarioId}-${slot.contractAddress}-${slot.slot}`}
-                          className="grid grid-cols-[24px_minmax(0,1fr)_48px] items-center gap-3"
-                        >
-                          <span className="font-mono text-xs text-[#77768a]">{String(index + 1).padStart(2, "0")}</span>
-                          <div>
-                            <div className="mb-1.5 flex items-center justify-between gap-3 text-xs">
-                              <code className="truncate text-[#c8c6d3]" title={slot.slot}>
-                                {shortHash(slot.slot)}
-                              </code>
-                              <span className="shrink-0 text-[#7e7d91]">{shortScenarioName(slot.scenarioId)}</span>
-                            </div>
-                            <div className="h-2 overflow-hidden rounded-full bg-white/[0.07]">
-                              <div
-                                className="h-full rounded-full bg-gradient-to-r from-violet-500 via-fuchsia-400 to-amber-300"
-                                style={{ width: `${Math.round(Math.max(0.15, slot.touches / maxTouches) * 100)}%` }}
-                              />
-                            </div>
+                    <div className="mt-5">
+                      <div
+                        className="grid grid-cols-5 gap-2 sm:grid-cols-8"
+                        aria-label="Observed storage-slot intensity matrix"
+                      >
+                        {heatMapSlots.map((slot, index) => {
+                          const intensity = Math.max(0.14, slot.touches / maxTouches);
+                          const isActive =
+                            activeMatrixSlot?.slot === slot.slot && activeMatrixSlot?.scenarioId === slot.scenarioId;
+                          return (
+                            <button
+                              key={`${slot.scenarioId}-${slot.contractAddress}-${slot.slot}`}
+                              type="button"
+                              title={`${shortScenarioName(slot.scenarioId)} · ${slot.touches} observed accesses · ${slot.callCount} calls touching this slot`}
+                              aria-label={`Storage slot ${index + 1}: ${shortScenarioName(slot.scenarioId)}, ${slot.touches} observed accesses, ${slot.callCount} calls, ${slot.dependencyEdgeCount} derived edges`}
+                              onMouseEnter={() => setActiveMatrixSlot(slot)}
+                              onFocus={() => setActiveMatrixSlot(slot)}
+                              onClick={() => setActiveMatrixSlot(slot)}
+                              className={`aspect-square rounded-md border transition duration-150 focus:outline-none focus:ring-2 focus:ring-amber-200/80 ${isActive ? "border-amber-100 scale-[1.06]" : "border-white/10 hover:border-amber-200/70 hover:scale-[1.04]"}`}
+                              style={{
+                                backgroundColor: `hsla(${278 - intensity * 228}, 88%, ${20 + intensity * 40}%, ${0.35 + intensity * 0.6})`,
+                                boxShadow: intensity > 0.75 ? "0 0 18px rgba(251, 191, 36, 0.28)" : undefined,
+                              }}
+                            >
+                              <span className="sr-only">{shortHash(slot.slot)}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-[#8d8b9c]">
+                        <span>Lower observed intensity</span>
+                        <div className="h-2 w-24 rounded-full bg-gradient-to-r from-violet-700 via-fuchsia-500 to-amber-300" />
+                        <span>Higher observed intensity</span>
+                      </div>
+                      {(() => {
+                        const slot = activeMatrixSlot ?? heatMapSlots[0];
+                        return (
+                          <div className="mt-4 rounded-lg border border-amber-300/20 bg-amber-400/[0.06] p-3 text-xs leading-5 text-[#ddd9c9]">
+                            <p className="m-0 font-mono font-semibold text-amber-100">
+                              {shortHash(slot.slot)} · {shortScenarioName(slot.scenarioId)}
+                            </p>
+                            <p className="mb-0 mt-1">
+                              {slot.touches} observed SLOAD/SSTORE accesses across {slot.callCount} calls;{" "}
+                              {slot.dependencyEdgeCount} derived dependency edges. Full EVM slot:{" "}
+                              <code className="break-all text-[#faf7e9]">{slot.slot}</code>
+                            </p>
                           </div>
-                          <span className="text-right font-mono text-xs text-white">{slot.touches}</span>
-                        </div>
-                      ))}
+                        );
+                      })()}
                     </div>
                   ) : (
                     <p className="mb-0 mt-5 rounded-md border border-white/10 bg-white/[0.025] px-3 py-4 text-sm text-[#9d9bad]">
@@ -732,7 +822,8 @@ const MProfilerDashboard = () => {
                     </p>
                   )}
                   <p className="mb-0 mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-[#858497]">
-                    Bar length is relative only to the observed hot slots in this report.
+                    Each block is one observed hot EVM storage slot. Color is relative only to observed touches in this
+                    report; hover, focus, or tap a block for its evidence.
                   </p>
                 </CardContent>
               </Card>
