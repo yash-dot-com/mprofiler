@@ -23,6 +23,7 @@
     "profile:scenarios": "hardhat run scripts/profile-scenarios.ts --network hardhat",
     "profile:contract": "hardhat run scripts/profile-contract.ts --network hardhat",
     "profile:testnet-check": "ts-node scripts/runProfileTestnetCheckWithPK.ts",
+    "deploy:mprofiler-testnet": "ts-node scripts/runMProfilerTestnetDeployWithPK.ts",
     "verify": "hardhat run scripts/verifyContract.ts"
   },
   "dependencies": {

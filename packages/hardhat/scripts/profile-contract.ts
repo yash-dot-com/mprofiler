@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readdir, readFile, rm, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import type { FunctionFragment, InterfaceAbi } from "ethers";
 import { ethers, network, run } from "hardhat";
@@ -66,10 +66,26 @@ async function compileSource(source: string, label: "baseline" | "revision") {
 async function loadArtifact(fileName: string, artifactDirectory: string, contractName: string) {
   const artifactPath = resolve(artifactDirectory, `${contractName}.json`);
   try {
-    return JSON.parse(await readFile(artifactPath, "utf8")) as { abi: unknown; bytecode: string };
+    return {
+      artifact: JSON.parse(await readFile(artifactPath, "utf8")) as { abi: unknown; bytecode: string },
+      contractName,
+    };
   } catch {
+    const available = (await readdir(artifactDirectory).catch(() => []))
+      .filter(file => file.endsWith(".json") && !file.endsWith(".dbg.json"))
+      .map(file => file.slice(0, -".json".length));
+    if (available.length === 1) {
+      const revisionContractName = available[0];
+      return {
+        artifact: JSON.parse(await readFile(resolve(artifactDirectory, `${revisionContractName}.json`), "utf8")) as {
+          abi: unknown;
+          bytecode: string;
+        },
+        contractName: revisionContractName,
+      };
+    }
     throw new Error(
-      `Compiled ${fileName}, but did not find contract ${contractName}. Use the exact Solidity contract name from the uploaded source.`,
+      `Compiled ${fileName}, but did not find contract ${contractName}. Available contracts: ${available.join(", ") || "none"}.`,
     );
   }
 }
@@ -170,7 +186,7 @@ async function main() {
   try {
     const baselineCompiled = await compileSource(job.baseline.source, "baseline");
     generatedFiles.push(baselineCompiled);
-    const baselineArtifact = await loadArtifact(
+    const baselineLoaded = await loadArtifact(
       baselineCompiled.fileName,
       baselineCompiled.artifactDirectory,
       job.workload.contractName,
@@ -178,8 +194,8 @@ async function main() {
 
     const snapshotId = await network.provider.send("evm_snapshot");
     const baseline = await runWorkload(
-      baselineArtifact,
-      job.workload.contractName,
+      baselineLoaded.artifact,
+      baselineLoaded.contractName,
       job.workload.calls,
       job.workload.constructorArgs,
       "baseline",
@@ -192,14 +208,14 @@ async function main() {
       if (reverted !== true) throw new Error("Could not reset the local EVM before profiling the revision.");
       const revisionCompiled = await compileSource(job.revision.source, "revision");
       generatedFiles.push(revisionCompiled);
-      const revisionArtifact = await loadArtifact(
+      const revisionLoaded = await loadArtifact(
         revisionCompiled.fileName,
         revisionCompiled.artifactDirectory,
         job.workload.contractName,
       );
       const revision = await runWorkload(
-        revisionArtifact,
-        job.workload.contractName,
+        revisionLoaded.artifact,
+        revisionLoaded.contractName,
         job.workload.calls,
         job.workload.constructorArgs,
         "revision",
@@ -209,7 +225,7 @@ async function main() {
         revision: revision.report,
         comparison: compareProfileReports(baseline.report, revision.report, {
           baseline: `${job.workload.contractName} baseline`,
-          revision: `${job.workload.contractName} revision`,
+          revision: `${revisionLoaded.contractName} revision`,
         }),
       };
       allTraces = { version: "1.0.0", baseline: baseline.rawTraces, revision: revision.rawTraces };

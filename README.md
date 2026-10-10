@@ -26,6 +26,11 @@ It gives developers one practical workflow:
 | Monad Testnet | Connected-wallet fixture deployment, bounded signer-based integration check, and public report-hash attestation. |
 | Hosted demo | Next.js frontend/API on Vercel and the isolated Hardhat worker on Render. |
 
+## Social Media Posting Proofs
+![alt text](image-1.png)
+![alt text](image-2.png)
+![alt text](image-3.png)
+
 ## Architecture
 
 ```mermaid
@@ -79,7 +84,7 @@ MPROFILER_WORKER_TOKEN='replace-with-the-same-token' \
   yarn start
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) for the product overview, then click **Launch profiler** or open [http://localhost:3000/profile](http://localhost:3000/profile) directly.
 
 You can instead put the two server-only values in `packages/nextjs/.env.local`:
 
@@ -162,7 +167,7 @@ MProfiler rejects the premise of a performance comparison unless the baseline an
 - Derived dependency-edge and hot-slot counts
 - Per-scenario gas, read, write, and edge values
 
-For an uploaded contract, supply a revision with the same contract name, compatible constructor, and callable methods. MProfiler rejects a comparison unless the encoded inputs match exactly. The Reference demo uses `ProfileWorkloadsRevision`, which implements the same five-method fixture interface:
+For an uploaded contract, supply a revision with a compatible constructor and callable methods. The revision may use a different Solidity contract name, such as `SloppyVault` and `OptimizedVault`. MProfiler rejects a comparison unless the encoded inputs match exactly. The Reference demo uses `ProfileWorkloadsRevision`, which implements the same five-method fixture interface:
 
 ```text
 writeIndependent(uint256,uint256)
@@ -202,6 +207,16 @@ On the dashboard:
 2. Approve switching to Monad Testnet.
 3. Click **Deploy on Testnet** to deploy the public `ProfileWorkloads` fixture from your wallet.
 4. After a completed local report, use **Public Testnet attestation** to deploy `MProfilerAttestation` or enter an existing registry address.
+
+### Dedicated signer deployment
+
+Deploy the public workload fixture and attestation registry with the dedicated encrypted Testnet signer:
+
+```bash
+yarn workspace @se-2/hardhat deploy:mprofiler-testnet
+```
+
+The command verifies Monad Testnet chain ID `10143`, asks locally for the signer password, and writes public addresses plus transaction hashes to `/tmp/mprofiler-testnet-deployment.json`.
 5. Optionally provide a public evidence URL, then click **Publish hash**.
 6. The UI links both explorer transactions and verifies that the receipt emitted `ProfileAttested` for the exact report hash.
 

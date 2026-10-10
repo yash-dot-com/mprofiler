@@ -62,7 +62,7 @@ export const Header = () => {
   const { targetNetwork } = useTargetNetwork();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
   const pathname = usePathname();
-  const isProfilerPage = ["/", "/compare", "/insights", "/debug"].includes(pathname);
+  const isProfilerPage = ["/", "/profile", "/compare", "/insights", "/debug"].includes(pathname);
 
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
@@ -91,9 +91,20 @@ export const Header = () => {
               Local workspace
             </span>
           </div>
-          {pathname !== "/debug" && <FlowNavigation />}
+          {pathname === "/" && (
+            <nav className="flex items-center gap-4 text-sm font-semibold text-slate-600">
+              <Link href="/#workflow" className="hidden hover:text-slate-950 sm:inline">
+                Workflow
+              </Link>
+              <Link href="/#evidence" className="hidden hover:text-slate-950 sm:inline">
+                Evidence
+              </Link>
+              <Link href="/profile" className="rounded-md bg-blue-700 px-3 py-2 text-white hover:bg-blue-800">Launch profiler</Link>
+            </nav>
+          )}
+          {pathname !== "/" && pathname !== "/debug" && <FlowNavigation />}
           {pathname === "/debug" && (
-            <Link href="/" className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+            <Link href="/profile" className="text-sm font-semibold text-blue-700 hover:text-blue-800">
               Back to workspace
             </Link>
           )}

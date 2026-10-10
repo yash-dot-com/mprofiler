@@ -1050,12 +1050,12 @@ const MProfilerDashboard = () => {
                 <CardContent className="!p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-pink-300">
+                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-700">
                         Observed EVM slots
                       </p>
                       <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Hot-slot access evidence</h2>
                     </div>
-                    <span className="rounded-full border border-pink-400/20 bg-pink-400/[0.07] px-2.5 py-1 text-xs text-pink-100">
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-800">
                       Trace backed
                     </span>
                   </div>
@@ -1109,7 +1109,7 @@ const MProfilerDashboard = () => {
               </Card>
               <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
-                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-amber-200">
+                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-amber-700">
                     Slot intensity
                   </p>
                   <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Observed access matrix</h2>
@@ -1143,7 +1143,7 @@ const MProfilerDashboard = () => {
                           );
                         })}
                       </div>
-                      <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-[#8d8b9c]">
+                      <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-slate-500">
                         <span>Lower observed intensity</span>
                         <div className="h-2 w-24 rounded-full bg-gradient-to-r from-blue-700 via-sky-500 to-amber-300" />
                         <span>Higher observed intensity</span>
@@ -1151,14 +1151,14 @@ const MProfilerDashboard = () => {
                       {(() => {
                         const slot = activeMatrixSlot ?? heatMapSlots[0];
                         return (
-                          <div className="mt-4 rounded-lg border border-amber-300/20 bg-amber-400/[0.06] p-3 text-xs leading-5 text-[#ddd9c9]">
-                            <p className="m-0 font-mono font-semibold text-amber-100">
+                          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-slate-700">
+                            <p className="m-0 font-mono font-semibold text-amber-900">
                               {shortHash(slot.slot)} · {shortScenarioName(slot.scenarioId)}
                             </p>
                             <p className="mb-0 mt-1">
                               {slot.touches} observed SLOAD/SSTORE accesses across {slot.callCount} calls;{" "}
                               {slot.dependencyEdgeCount} derived dependency edges. Full EVM slot:{" "}
-                              <code className="break-all text-[#faf7e9]">{slot.slot}</code>
+                              <code className="break-all text-slate-800">{slot.slot}</code>
                             </p>
                           </div>
                         );
@@ -1186,7 +1186,7 @@ const MProfilerDashboard = () => {
                   <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Scenario measurements</h2>
                   <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200">
                     <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-                      <thead className="bg-white/[0.045] text-xs uppercase tracking-[0.11em] text-[#aaa9bb]">
+                      <thead className="bg-slate-50 text-xs uppercase tracking-[0.11em] text-slate-600">
                         <tr>
                           <th className="px-4 py-3 font-medium">Scenario</th>
                           <th className="px-4 py-3 text-right font-medium">Calls</th>
@@ -1204,32 +1204,32 @@ const MProfilerDashboard = () => {
                           ).length;
                           return (
                             <tr key={scenarioId} className="border-t border-slate-100">
-                              <th scope="row" className="px-4 py-3 font-medium text-[#e2e0e9]">
+                              <th scope="row" className="px-4 py-3 font-medium text-slate-800">
                                 {scenarioName(scenarioId)}
                               </th>
-                              <td className="px-4 py-3 text-right font-mono tabular-nums text-[#c5c3cf]">
+                              <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
                                 {formatInteger(
                                   row?.baselineCallCount ??
                                     baseline.calls.filter(call => call.workloadCaseId.startsWith(`${scenarioId}:`))
                                       .length,
                                 )}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono tabular-nums text-[#c5c3cf]">
+                              <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
                                 {formatInteger(row?.baselineGasUsed ?? sumScenarioGas(baseline, scenarioId))}
                               </td>
                               {comparison && (
-                                <td className="px-4 py-3 text-right font-mono tabular-nums text-[#c5c3cf]">
+                                <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
                                   {formatInteger(row?.revisionGasUsed ?? 0)}
                                 </td>
                               )}
                               {comparison && (
                                 <td
-                                  className={`px-4 py-3 text-right font-mono tabular-nums ${row && BigInt(row.gasDeltaRevisionMinusBaseline) < 0n ? "text-emerald-300" : row && BigInt(row.gasDeltaRevisionMinusBaseline) > 0n ? "text-rose-300" : "text-[#c5c3cf]"}`}
+                                  className={`px-4 py-3 text-right font-mono tabular-nums ${row && BigInt(row.gasDeltaRevisionMinusBaseline) < 0n ? "text-emerald-700" : row && BigInt(row.gasDeltaRevisionMinusBaseline) > 0n ? "text-rose-700" : "text-slate-700"}`}
                                 >
                                   {row ? formatDelta(row.gasDeltaRevisionMinusBaseline) : "—"}
                                 </td>
                               )}
-                              <td className="px-4 py-3 text-right font-mono tabular-nums text-[#c5c3cf]">
+                              <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
                                 {formatInteger(edges)}
                               </td>
                             </tr>
@@ -1242,11 +1242,11 @@ const MProfilerDashboard = () => {
               </Card>
               <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
-                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-200">
+                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-700">
                     Evidence summary
                   </p>
                   <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Review handoff</h2>
-                  <div className="mt-5 space-y-3 text-sm leading-6 text-[#c2c0cd]">
+                  <div className="mt-5 space-y-3 text-sm leading-6 text-slate-700">
                     <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
                       <span className="font-medium text-slate-900">Trace coverage:</span> {baseline.traceCoverage} (
                       {completeTraceCount}/{baseline.calls.length} traces complete)
@@ -1254,7 +1254,7 @@ const MProfilerDashboard = () => {
                     {comparison && (
                       <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
                         <span className="font-medium text-slate-900">Measured gas delta:</span>{" "}
-                        <span className={gasDelta && BigInt(gasDelta) < 0n ? "text-emerald-300" : "text-[#d8d6e1]"}>
+                        <span className={gasDelta && BigInt(gasDelta) < 0n ? "text-emerald-700" : "text-slate-700"}>
                           {gasDelta ? formatDelta(gasDelta) : "—"}
                         </span>{" "}
                         across the current local input set.
@@ -1288,25 +1288,25 @@ const MProfilerDashboard = () => {
             </section>
 
             <details className="mt-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-              <summary className="cursor-pointer text-sm font-semibold text-[#e4e2ea]">
+              <summary className="cursor-pointer text-sm font-semibold text-slate-800">
                 Inspect transaction traces ({baseline.calls.length})
               </summary>
-              <div className="mt-4 divide-y divide-white/10">
+              <div className="mt-4 divide-y divide-slate-200">
                 {baseline.calls.map(call => (
                   <details key={call.transactionHash} className="py-3">
                     <summary className="grid cursor-pointer gap-2 text-xs sm:grid-cols-[minmax(180px,1fr)_160px_105px_120px] sm:items-center">
-                      <span className="text-sm text-[#dedce6]">{call.workloadCaseId}</span>
-                      <code className="text-[#918fa1]" title={call.transactionHash}>
+                      <span className="text-sm text-slate-800">{call.workloadCaseId}</span>
+                      <code className="text-slate-500" title={call.transactionHash}>
                         {shortHash(call.transactionHash)}
                       </code>
-                      <span className="font-mono text-[#bcbac8]">{formatInteger(call.gasUsed)} gas</span>
-                      <span className={call.trace.complete ? "text-emerald-300" : "text-amber-200"}>
+                      <span className="font-mono text-slate-700">{formatInteger(call.gasUsed)} gas</span>
+                      <span className={call.trace.complete ? "text-emerald-700" : "text-amber-700"}>
                         {call.trace.complete ? `${call.trace.accesses.length} accesses` : "Trace incomplete"}
                       </span>
                     </summary>
                     <div className="mt-3 overflow-x-auto rounded-md border border-slate-200 bg-slate-50">
                       <table className="w-full min-w-[560px] text-left text-xs">
-                        <thead className="text-[#8c8a9c]">
+                        <thead className="text-slate-500">
                           <tr>
                             <th className="px-3 py-2">Operation</th>
                             <th className="px-3 py-2">Slot</th>
@@ -1319,13 +1319,13 @@ const MProfilerDashboard = () => {
                               key={`${access.slot}-${access.programCounter}-${index}`}
                               className="border-t border-slate-100"
                             >
-                              <td className="px-3 py-2 font-mono text-[#d4d2dc]">
+                              <td className="px-3 py-2 font-mono text-slate-700">
                                 {access.opcode} · {access.operation}
                               </td>
-                              <td className="px-3 py-2 font-mono text-[#a9a7b7]" title={access.slot}>
+                              <td className="px-3 py-2 font-mono text-slate-600" title={access.slot}>
                                 {shortHash(access.slot)}
                               </td>
-                              <td className="px-3 py-2 font-mono text-[#a9a7b7]" title={access.contractAddress}>
+                              <td className="px-3 py-2 font-mono text-slate-600" title={access.contractAddress}>
                                 {shortHash(access.contractAddress)}
                               </td>
                             </tr>
@@ -1333,7 +1333,7 @@ const MProfilerDashboard = () => {
                         </tbody>
                       </table>
                       {call.trace.warnings.length > 0 && (
-                        <p className="m-0 px-3 py-2 text-amber-200">{call.trace.warnings.join(" ")}</p>
+                        <p className="m-0 px-3 py-2 text-amber-800">{call.trace.warnings.join(" ")}</p>
                       )}
                     </div>
                   </details>

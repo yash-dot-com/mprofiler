@@ -18,7 +18,7 @@ export function FlowNavigation() {
   }, []);
 
   const links = [
-    { label: "Profile", href: "/", active: pathname === "/" },
+    { label: "Profile", href: "/profile", active: pathname === "/profile" },
     { label: "Compare", href: routeFor("/compare", jobId), active: pathname === "/compare" },
     { label: "Insights", href: routeFor("/insights", jobId), active: pathname === "/insights" },
   ];

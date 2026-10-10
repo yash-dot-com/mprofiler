@@ -1,5 +1,5 @@
-import MProfilerDashboard from "./MProfilerDashboard";
+import LandingPage from "./LandingPage";
 
 export default function Home() {
-  return <MProfilerDashboard />;
+  return <LandingPage />;
 }
