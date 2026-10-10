@@ -14,7 +14,14 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "~~/components/ui/chart";
-import { clearStoredProfileResult, loadStoredProfileResult, saveProfileResult } from "~~/lib/mprofiler/profileStorage";
+import {
+  clearStoredProfileResult,
+  loadStoredContractDraft,
+  loadStoredProfileResult,
+  saveContractDraft,
+  saveInsightDraft,
+  saveProfileResult,
+} from "~~/lib/mprofiler/profileStorage";
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "expired";
 type ProfileJob = { id: string; status: JobStatus; createdAt: string; updatedAt: string; error: string | null };
@@ -116,6 +123,43 @@ const scenarioName = (id: string) => scenarioLabels[id] ?? id.replaceAll("-", " 
 const shortScenarioName = (id: string) => shortScenarioLabels[id] ?? scenarioName(id);
 const shortHash = (value: string) => `${value.slice(0, 10)}…${value.slice(-8)}`;
 const formatInteger = (value: string | number) => new Intl.NumberFormat("en-US").format(BigInt(value));
+type ManifestCallDraft = { function: string; args: unknown[]; caller: number; repeat: number; label: string };
+
+function sampleArgument(type: string): unknown {
+  const normalized = type.replace(/\s+(memory|calldata|storage|payable)\b/g, "").trim();
+  if (/^(u?int)([0-9]{0,3})?$/.test(normalized)) return 0;
+  if (normalized === "bool") return false;
+  if (normalized === "string") return "";
+  if (normalized === "address") return "0x0000000000000000000000000000000000000000";
+  if (/^bytes([0-9]{1,2})?$/.test(normalized)) return "0x".padEnd(66, "0");
+  if (/\[\]$/.test(normalized)) return [];
+  return 0;
+}
+
+function deriveCallManifest(source: string): ManifestCallDraft[] {
+  const matches = source.matchAll(/function\s+([A-Za-z_][A-Za-z0-9_]*)\s*\(([^)]*)\)\s*([^\{;]*)/g);
+  const candidates: ManifestCallDraft[] = [];
+  for (const match of matches) {
+    const [, name, rawArguments, modifiers] = match;
+    if (/\b(view|pure)\b/.test(modifiers)) continue;
+    const argumentTypes = rawArguments.trim()
+      ? rawArguments
+          .split(",")
+          .map(argument => argument.trim().split(/\s+/)[0])
+          .filter(Boolean)
+      : [];
+    candidates.push({
+      function: `${name}(${argumentTypes.join(",")})`,
+      args: argumentTypes.map(sampleArgument),
+      caller: 0,
+      repeat: 3,
+      label: name,
+    });
+  }
+  // One focused call produces an understandable first report. Developers can add calls after inspecting it.
+  const preferred = candidates.find(call => /(?:update|write|set|increment|decrement|mutate)/i.test(call.label));
+  return preferred ? [preferred] : candidates.slice(0, 1);
+}
 function formatDelta(value: string) {
   const delta = BigInt(value);
   const amount = new Intl.NumberFormat("en-US").format(delta < 0n ? -delta : delta);
@@ -184,6 +228,15 @@ const MProfilerDashboard = () => {
   const [activeMatrixSlot, setActiveMatrixSlot] = useState<HotSlot | null>(null);
   const [browserResultRestored, setBrowserResultRestored] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
+  const [baselineSource, setBaselineSource] = useState("");
+  const [revisionSource, setRevisionSource] = useState("");
+  const [baselineFileName, setBaselineFileName] = useState("");
+  const [revisionFileName, setRevisionFileName] = useState("");
+  const [showRevision, setShowRevision] = useState(false);
+  const [contractName, setContractName] = useState("");
+  const [constructorArgs, setConstructorArgs] = useState("[]");
+  const [callManifest, setCallManifest] = useState("[]");
+  const [manifestHint, setManifestHint] = useState("Upload or paste source, then generate a starter call.");
 
   useEffect(() => {
     const saved = loadStoredProfileResult();
@@ -195,6 +248,16 @@ const MProfilerDashboard = () => {
         setBrowserResultRestored(true);
       }
     }
+    const draft = loadStoredContractDraft();
+    if (draft) {
+      setBaselineSource(draft.baselineSource);
+      setRevisionSource(draft.revisionSource);
+      setContractName(draft.contractName);
+      setConstructorArgs(draft.constructorArgs);
+      setCallManifest(draft.callManifest);
+      setShowRevision(Boolean(draft.revisionSource));
+      if (draft.baselineSource) setManifestHint("Restored your local contract draft.");
+    }
     setStorageReady(true);
   }, []);
 
@@ -202,6 +265,11 @@ const MProfilerDashboard = () => {
     if (!storageReady || job?.status !== "completed" || !report) return;
     saveProfileResult(job, report);
   }, [job, report, storageReady]);
+
+  useEffect(() => {
+    if (!storageReady) return;
+    saveContractDraft({ baselineSource, revisionSource, contractName, constructorArgs, callManifest });
+  }, [baselineSource, revisionSource, contractName, constructorArgs, callManifest, storageReady]);
 
   const watchJob = async (initialJob: ProfileJob) => {
     let current = initialJob;
@@ -264,6 +332,110 @@ const MProfilerDashboard = () => {
     }
   };
 
+  const loadContractFile = async (kind: "baseline" | "revision", event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+    if (file.size > 64_000) {
+      setError("Solidity source files must be 64 KB or smaller for an isolated local profile.");
+      return;
+    }
+    const source = await file.text();
+    if (kind === "baseline") {
+      setBaselineSource(source);
+      setBaselineFileName(file.name);
+      const calls = deriveCallManifest(source);
+      if (calls.length > 0) {
+        setCallManifest(JSON.stringify(calls, null, 2));
+        setManifestHint(
+          `Generated a starter call: ${calls[0].function}. Edit it if your setup needs different values.`,
+        );
+      } else {
+        setCallManifest("[]");
+        setManifestHint("No state-changing Solidity function was detected. Add a transaction call manually.");
+      }
+      if (!contractName) {
+        const match = source.match(/\bcontract\s+([A-Za-z][A-Za-z0-9_]*)/);
+        if (match) setContractName(match[1]);
+      }
+    } else {
+      setRevisionSource(source);
+      setRevisionFileName(file.name);
+    }
+  };
+
+  const generateCallManifest = () => {
+    const calls = deriveCallManifest(baselineSource);
+    if (calls.length === 0) {
+      setError("No state-changing Solidity function was detected in this source. Add a call manually.");
+      return;
+    }
+    setCallManifest(JSON.stringify(calls, null, 2));
+    if (!contractName.trim()) {
+      const contractMatch = baselineSource.match(/\bcontract\s+([A-Za-z][A-Za-z0-9_]*)/);
+      if (contractMatch) setContractName(contractMatch[1]);
+    }
+    setManifestHint(
+      `Generated a starter call: ${calls[0].function}. It uses safe zero-value arguments; edit it when your contract needs setup values.`,
+    );
+    setError(null);
+  };
+
+  const handleContractSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    let parsedConstructorArgs: unknown[];
+    let parsedCalls: unknown[];
+    try {
+      parsedConstructorArgs = JSON.parse(constructorArgs) as unknown[];
+      parsedCalls = JSON.parse(callManifest) as unknown[];
+      if (!Array.isArray(parsedConstructorArgs) || !Array.isArray(parsedCalls) || parsedCalls.length === 0) {
+        throw new Error("Constructor arguments must be an array and the call manifest needs at least one call.");
+      }
+    } catch (manifestError) {
+      setError(manifestError instanceof Error ? manifestError.message : "The workload JSON is invalid.");
+      return;
+    }
+    if (!baselineSource.trim()) {
+      setError("Upload or paste the baseline Solidity contract first.");
+      return;
+    }
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(contractName.trim())) {
+      setError("Enter the exact Solidity contract name to deploy.");
+      return;
+    }
+    setIsSubmitting(true);
+    setReport(null);
+    setJob(null);
+    setCopyState("idle");
+    setActiveMatrixSlot(null);
+    setBrowserResultRestored(false);
+    try {
+      window.sessionStorage.setItem(insightSourceStorageKey, baselineSource);
+      saveInsightDraft(baselineSource, null);
+      const startedJob = await readJson<ProfileJob>(
+        await fetch("/api/profile/jobs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            mode: "contract",
+            baseline: { source: baselineSource },
+            ...(revisionSource.trim() ? { revision: { source: revisionSource } } : {}),
+            workload: {
+              contractName: contractName.trim(),
+              constructorArgs: parsedConstructorArgs,
+              calls: parsedCalls,
+            },
+          }),
+        }),
+      );
+      await watchJob(startedJob);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not start the contract profile.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   const handleReconnect = async () => {
     if (!job) return;
     setIsReconnecting(true);
@@ -284,6 +456,14 @@ const MProfilerDashboard = () => {
     setError(null);
     setBrowserResultRestored(false);
     setActiveMatrixSlot(null);
+  };
+
+  const revealRevision = () => {
+    setShowRevision(true);
+    window.setTimeout(
+      () => document.getElementById("revision-source")?.scrollIntoView({ behavior: "smooth", block: "center" }),
+      0,
+    );
   };
 
   const isActive = job?.status === "queued" || job?.status === "running";
@@ -348,21 +528,6 @@ const MProfilerDashboard = () => {
       setCopyState("failed");
     }
   };
-  const attachSourceAndOpenInsights = async (event: ChangeEvent<HTMLInputElement>) => {
-    const file = event.target.files?.[0];
-    if (!file || !job?.id) return;
-    if (file.size > 64_000) {
-      setError("Solidity source files must be 64 KB or smaller for the diagnostic pass.");
-      return;
-    }
-    try {
-      window.sessionStorage.setItem(insightSourceStorageKey, await file.text());
-      window.location.assign(`/insights?job=${job.id}`);
-    } catch {
-      setError("Could not attach this Solidity source for analysis.");
-    }
-  };
-
   return (
     <div className="mprofiler-page min-h-full bg-[#f6f8fb] text-slate-900 selection:bg-blue-100">
       <main className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
@@ -375,8 +540,8 @@ const MProfilerDashboard = () => {
               Find storage pressure before deployment.
             </h1>
             <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
-              Run deterministic workloads, inspect trace-backed storage evidence, then compare a revision against the
-              same inputs.
+              Profile one Solidity contract, inspect trace-backed storage evidence, then send an evidence-bound handoff
+              to your coding agent.
             </p>
           </div>
         </section>
@@ -386,10 +551,15 @@ const MProfilerDashboard = () => {
           className="mt-5 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-4"
         >
           {[
-            { step: "01", label: "Profile", detail: "Run deterministic local workloads", active: true },
-            { step: "02", label: "Compare", detail: "Validate identical inputs", active: Boolean(report?.comparison) },
-            { step: "03", label: "Improve", detail: "Attach source and inspect evidence", active: false },
-            { step: "04", label: "Verify", detail: "Publish Testnet report hash", active: false },
+            { step: "01", label: "Profile", detail: "Compile and trace your contract", active: true },
+            { step: "02", label: "Diagnose", detail: "Review evidence-backed findings", active: Boolean(baseline) },
+            { step: "03", label: "Improve", detail: "Copy the coding-agent handoff", active: false },
+            {
+              step: "04",
+              label: "Compare",
+              detail: "Profile a revision with the same calls",
+              active: Boolean(report?.comparison),
+            },
           ].map(item => (
             <div
               key={item.step}
@@ -405,58 +575,203 @@ const MProfilerDashboard = () => {
           ))}
         </section>
 
-        <form
-          onSubmit={handleSubmit}
-          className="mt-5 grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-[150px_170px_minmax(220px,1fr)_auto] md:items-end"
-        >
-          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-            Batch size
-            <input
-              aria-label="Batch size per scenario"
-              className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              type="number"
-              min={1}
-              max={100}
-              step={1}
-              required
-              value={batchSize}
-              onChange={event => setBatchSize(event.target.value)}
-            />
-          </label>
-          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-            Controlled accounts
-            <input
-              aria-label="Controlled account count"
-              className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              type="number"
-              min={2}
-              max={20}
-              step={1}
-              required
-              value={accountCount}
-              onChange={event => setAccountCount(event.target.value)}
-            />
-          </label>
-          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-            Revision artifact <span className="normal-case tracking-normal text-slate-400">(optional)</span>
-            <input
-              aria-label="Revision contract artifact"
-              className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              type="text"
-              maxLength={64}
-              placeholder="ProfileWorkloadsRevision"
-              value={revisionArtifact}
-              onChange={event => setRevisionArtifact(event.target.value)}
-            />
-          </label>
-          <button
-            className="h-11 rounded-md bg-blue-700 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
-            type="submit"
-            disabled={isSubmitting || isActive}
-          >
-            {isSubmitting || isActive ? "Profiling…" : "Run local profile"}
-          </button>
+        <form onSubmit={handleContractSubmit} className="mt-5 rounded-xl border border-blue-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.17em] text-blue-700">
+                Step 1 · profile your contract
+              </p>
+              <h2 className="mb-0 mt-2 text-xl font-semibold tracking-[-0.035em] text-slate-950">
+                Start with one contract
+              </h2>
+              <p className="mb-0 mt-2 max-w-3xl text-sm leading-6 text-slate-600">
+                Upload one Solidity file, deploy it in a disposable local Hardhat EVM, and run the calls that matter for
+                your contract. You will see measured gas, traces, storage access evidence, hot slots, and graph
+                properties before deciding whether a revision is worth profiling.
+              </p>
+            </div>
+            <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-800">
+              Local execution only
+            </span>
+          </div>
+
+          <div className="mt-5">
+            <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="m-0 text-sm font-semibold text-slate-900">Baseline contract</p>
+                  <p className="mb-0 mt-1 text-xs text-slate-500">Required · the version you want to measure first</p>
+                </div>
+                <label className="cursor-pointer rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                  Upload .sol
+                  <input
+                    className="sr-only"
+                    type="file"
+                    accept=".sol,text/plain"
+                    onChange={event => loadContractFile("baseline", event)}
+                  />
+                </label>
+              </div>
+              <textarea
+                aria-label="Baseline Solidity source"
+                value={baselineSource}
+                onChange={event => setBaselineSource(event.target.value)}
+                placeholder="Paste a standalone Solidity contract, or upload a .sol file."
+                spellCheck={false}
+                className="mt-3 h-44 w-full resize-y rounded-md border border-slate-200 bg-white p-3 font-mono text-xs leading-5 text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+              />
+              <p className="mb-0 mt-2 text-xs text-slate-500">
+                {baselineFileName || `${baselineSource.length} characters loaded`}
+              </p>
+            </section>
+            {showRevision && (
+              <section id="revision-source" className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="m-0 text-sm font-semibold text-slate-900">Revision contract</p>
+                    <p className="mb-0 mt-1 text-xs text-slate-500">Optional · compare under identical inputs</p>
+                  </div>
+                  <label className="cursor-pointer rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
+                    Upload .sol
+                    <input
+                      className="sr-only"
+                      type="file"
+                      accept=".sol,text/plain"
+                      onChange={event => loadContractFile("revision", event)}
+                    />
+                  </label>
+                </div>
+                <textarea
+                  aria-label="Revision Solidity source"
+                  value={revisionSource}
+                  onChange={event => setRevisionSource(event.target.value)}
+                  placeholder="Paste a compatible revision to generate a measured comparison."
+                  spellCheck={false}
+                  className="mt-3 h-44 w-full resize-y rounded-md border border-slate-200 bg-white p-3 font-mono text-xs leading-5 text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                />
+                <p className="mb-0 mt-2 text-xs text-slate-500">
+                  {revisionFileName || `${revisionSource.length} characters loaded`}
+                </p>
+              </section>
+            )}
+          </div>
+
+          <div className="mt-4 grid gap-4 lg:grid-cols-[180px_0.6fr_1.4fr_auto] lg:items-end">
+            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              Contract name
+              <input
+                aria-label="Solidity contract name"
+                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                value={contractName}
+                onChange={event => setContractName(event.target.value)}
+                placeholder="Counter"
+                required
+              />
+            </label>
+            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              Constructor args (JSON)
+              <input
+                aria-label="Constructor arguments JSON"
+                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                value={constructorArgs}
+                onChange={event => setConstructorArgs(event.target.value)}
+              />
+            </label>
+            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              <span className="flex items-center justify-between gap-3">
+                Transaction manifest (JSON)
+                <button
+                  type="button"
+                  onClick={generateCallManifest}
+                  className="normal-case tracking-normal text-blue-700 underline underline-offset-4 hover:text-blue-900"
+                >
+                  Generate from source
+                </button>
+              </span>
+              <textarea
+                aria-label="Transaction manifest JSON"
+                className="mt-2 block h-24 w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-xs leading-5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                value={callManifest}
+                onChange={event => setCallManifest(event.target.value)}
+                placeholder={'[\n  { "function": "yourMethod(uint256)", "args": [1], "caller": 0, "repeat": 2 }\n]'}
+              />
+            </label>
+            <button
+              className="h-11 rounded-md bg-blue-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
+              type="submit"
+              disabled={isSubmitting || isActive}
+            >
+              {isSubmitting || isActive ? "Profiling…" : showRevision ? "Profile + compare" : "Compile + profile"}
+            </button>
+          </div>
+          <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
+            {manifestHint} A call is{" "}
+            <code>{'{ "function": "yourMethod(uint256)", "args": [1], "caller": 0, "repeat": 2 }'}</code>. Only
+            state-changing calls produce receipts and storage traces.
+          </p>
         </form>
+
+        <details className="mt-8 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <summary className="cursor-pointer text-sm font-semibold text-slate-600 marker:text-blue-600">
+            Reference fixture demo (optional)
+          </summary>
+          <p className="mb-0 mt-2 text-xs leading-5 text-slate-500">
+            This runs MProfiler&apos;s built-in five-scenario fixture. Use the contract upload flow above for your own
+            Solidity source.
+          </p>
+          <form
+            onSubmit={handleSubmit}
+            className="mt-5 grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-[150px_170px_minmax(220px,1fr)_auto] md:items-end"
+          >
+            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              Batch size
+              <input
+                aria-label="Batch size per scenario"
+                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                type="number"
+                min={1}
+                max={100}
+                step={1}
+                required
+                value={batchSize}
+                onChange={event => setBatchSize(event.target.value)}
+              />
+            </label>
+            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              Controlled accounts
+              <input
+                aria-label="Controlled account count"
+                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                type="number"
+                min={2}
+                max={20}
+                step={1}
+                required
+                value={accountCount}
+                onChange={event => setAccountCount(event.target.value)}
+              />
+            </label>
+            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+              Revision artifact <span className="normal-case tracking-normal text-slate-400">(optional)</span>
+              <input
+                aria-label="Revision contract artifact"
+                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                type="text"
+                maxLength={64}
+                placeholder="ProfileWorkloadsRevision"
+                value={revisionArtifact}
+                onChange={event => setRevisionArtifact(event.target.value)}
+              />
+            </label>
+            <button
+              className="h-11 rounded-md bg-blue-700 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
+              type="submit"
+              disabled={isSubmitting || isActive}
+            >
+              {isSubmitting || isActive ? "Profiling…" : "Run local profile"}
+            </button>
+          </form>
+        </details>
         {(job || error) && (
           <section
             aria-live="polite"
@@ -553,32 +868,24 @@ const MProfilerDashboard = () => {
                       Profile complete · continue the workflow
                     </p>
                     <p className="mb-0 mt-1 text-sm text-slate-600">
-                      Your report is saved in this browser. Compare the revision or inspect the source without losing
-                      this run.
+                      Your report and source are saved in this browser. Review the diagnostics first, copy the
+                      coding-agent handoff, then return here with a revised file when you are ready.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Link
-                      href={`/compare?job=${job.id}`}
+                      href={`/insights?job=${job.id}`}
                       className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
                     >
-                      1. Compare revision
+                      1. Review diagnostics + copy handoff
                     </Link>
-                    <label className="cursor-pointer rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
-                      2. Upload source + analyze
-                      <input
-                        className="sr-only"
-                        type="file"
-                        accept=".sol,text/plain"
-                        onChange={attachSourceAndOpenInsights}
-                      />
-                    </label>
-                    <Link
-                      href={`/insights?job=${job.id}`}
+                    <button
+                      type="button"
+                      onClick={revealRevision}
                       className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                     >
-                      Analyze fixture
-                    </Link>
+                      2. Add revision for comparison
+                    </button>
                   </div>
                 </div>
               </section>

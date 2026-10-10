@@ -21,6 +21,7 @@
     "test": "REPORT_GAS=true hardhat test --network hardhat",
     "worker": "node scripts/worker-server.mjs",
     "profile:scenarios": "hardhat run scripts/profile-scenarios.ts --network hardhat",
+    "profile:contract": "hardhat run scripts/profile-contract.ts --network hardhat",
     "profile:testnet-check": "ts-node scripts/runProfileTestnetCheckWithPK.ts",
     "verify": "hardhat run scripts/verifyContract.ts"
   },

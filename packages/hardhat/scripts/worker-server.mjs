@@ -1,6 +1,6 @@
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, resolve } from "node:path";
@@ -14,7 +14,7 @@ const queueLimit = 3;
 const maxRetainedJobs = 20;
 const retentionMs = 15 * 60_000;
 const expiredRetentionMs = 60_000;
-const maxRequestBytes = 4_096;
+const maxRequestBytes = 128_000;
 const maxOutputBytes = 1_000_000;
 const maxReportBytes = 15_000_000;
 const maxTraceBytes = 50_000_000;
@@ -67,7 +67,7 @@ function readRequestBody(request) {
   });
 }
 
-async function runScenarioJob(job) {
+async function runProfileJob(job) {
   job.status = "running";
   job.updatedAt = new Date().toISOString();
   let directory;
@@ -76,11 +76,13 @@ async function runScenarioJob(job) {
     directory = await mkdtemp(resolve(tmpdir(), "mprofiler-job-"));
     const reportPath = resolve(directory, "report.json");
     const tracePath = resolve(directory, "traces.json");
+    const contractJobPath = resolve(directory, "contract-job.json");
+    if (job.mode === "contract") await writeFile(contractJobPath, JSON.stringify(job.contractJob));
 
     await new Promise((resolveProcess, rejectProcess) => {
       const child = spawn(
         "yarn",
-        ["workspace", "@se-2/hardhat", "profile:scenarios"],
+        ["workspace", "@se-2/hardhat", job.mode === "contract" ? "profile:contract" : "profile:scenarios"],
         {
           cwd: root,
           env: {
@@ -90,6 +92,7 @@ async function runScenarioJob(job) {
             MPROFILER_BATCH_SIZE: String(job.batchSize),
             MPROFILER_ACCOUNT_COUNT: String(job.controlledAccountCount),
             MPROFILER_REVISION_ARTIFACT: job.revisionArtifact ?? "",
+            MPROFILER_CONTRACT_JOB_PATH: job.mode === "contract" ? contractJobPath : "",
           },
           detached: process.platform !== "win32",
           stdio: ["ignore", "pipe", "pipe"],
@@ -108,7 +111,10 @@ async function runScenarioJob(job) {
           child.kill("SIGKILL");
         }
       };
-      const jobTimeoutMs = Math.min(300_000, Math.max(timeoutMs, 10_000 + job.batchSize * 2_000));
+      const workloadSize = job.mode === "contract"
+        ? job.contractJob.workload.calls.reduce((total, call) => total + call.repeat, 0)
+        : job.batchSize;
+      const jobTimeoutMs = Math.min(300_000, Math.max(timeoutMs, 10_000 + workloadSize * 2_000));
       const timer = setTimeout(() => {
         timedOut = true;
         killProcessTree();
@@ -177,11 +183,53 @@ async function drainQueue() {
   if (!job) return;
   active = true;
   try {
-    await runScenarioJob(job);
+    await runProfileJob(job);
   } finally {
     active = false;
     void drainQueue();
   }
+}
+
+function isRecord(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function validateContractRequest(body) {
+  if (!isRecord(body) || body.mode !== "contract"
+    || Object.keys(body).some(key => !["mode", "baseline", "revision", "workload"].includes(key))) {
+    return { error: "Expected mode contract with baseline source, optional revision source, and a workload manifest." };
+  }
+  const source = value => isRecord(value) && typeof value.source === "string" && value.source.length > 0 && value.source.length <= 64_000;
+  if (!source(body.baseline) || (body.revision !== undefined && !source(body.revision))) {
+    return { error: "baseline and revision must contain Solidity source strings no larger than 64 KB." };
+  }
+  if (!isRecord(body.workload) || typeof body.workload.contractName !== "string"
+    || !/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(body.workload.contractName)
+    || !Array.isArray(body.workload.constructorArgs) || !Array.isArray(body.workload.calls)
+    || body.workload.calls.length < 1 || body.workload.calls.length > 20) {
+    return { error: "workload requires a contractName, constructorArgs array, and one to twenty calls." };
+  }
+  const calls = [];
+  for (const call of body.workload.calls) {
+    if (!isRecord(call) || typeof call.function !== "string" || call.function.length < 1 || call.function.length > 160
+      || !Array.isArray(call.args) || !Number.isInteger(call.caller) || call.caller < 0 || call.caller > 19
+      || !Number.isInteger(call.repeat) || call.repeat < 1 || call.repeat > 20
+      || (call.label !== undefined && (typeof call.label !== "string" || call.label.length > 80))) {
+      return { error: "Each workload call needs function, args, caller (0–19), repeat (1–20), and an optional short label." };
+    }
+    calls.push({ function: call.function, args: call.args, caller: call.caller, repeat: call.repeat, ...(call.label ? { label: call.label } : {}) });
+  }
+  if (calls.reduce((total, call) => total + call.repeat, 0) > 100) {
+    return { error: "The contract workload may contain at most 100 total call repetitions." };
+  }
+  return {
+    value: {
+      mode: "contract",
+      baseline: { source: body.baseline.source },
+      ...(body.revision ? { revision: { source: body.revision.source } } : {}),
+      workload: { contractName: body.workload.contractName, constructorArgs: body.workload.constructorArgs, calls },
+    },
+  };
 }
 
 const server = createServer(async (request, response) => {
@@ -195,6 +243,21 @@ const server = createServer(async (request, response) => {
       body = await readRequestBody(request);
     } catch (error) {
       return sendJson(response, 400, { error: error instanceof Error ? error.message : "Invalid request." });
+    }
+    if (body?.mode === "contract") {
+      const parsed = validateContractRequest(body);
+      if (parsed.error) return sendJson(response, 400, { error: parsed.error });
+      if (queue.length >= queueLimit) return sendJson(response, 429, { error: "The profiling queue is full. Try again shortly." });
+      if (jobs.size >= maxRetainedJobs) return sendJson(response, 429, { error: "The worker's retained job limit is full. Try again shortly." });
+      const now = new Date().toISOString();
+      const job = {
+        id: randomUUID(), status: "queued", createdAt: now, updatedAt: now, expiredAt: null, error: null, report: null,
+        mode: "contract", contractJob: parsed.value,
+      };
+      jobs.set(job.id, job);
+      queue.push(job);
+      void drainQueue();
+      return sendJson(response, 202, publicJob(job));
     }
     if (body?.mode !== "scenarios" || Object.keys(body).some(key => !["mode", "batchSize", "controlledAccountCount", "revisionArtifact"].includes(key))) {
       return sendJson(response, 400, { error: "Expected mode scenarios with optional batchSize, controlledAccountCount, and revisionArtifact." });
@@ -215,7 +278,7 @@ const server = createServer(async (request, response) => {
     if (jobs.size >= maxRetainedJobs) return sendJson(response, 429, { error: "The worker's retained job limit is full. Try again shortly." });
 
     const now = new Date().toISOString();
-    const job = { id: randomUUID(), status: "queued", createdAt: now, updatedAt: now, expiredAt: null, error: null, report: null, batchSize, controlledAccountCount, revisionArtifact };
+    const job = { id: randomUUID(), status: "queued", createdAt: now, updatedAt: now, expiredAt: null, error: null, report: null, mode: "scenarios", batchSize, controlledAccountCount, revisionArtifact };
     jobs.set(job.id, job);
     queue.push(job);
     void drainQueue();

@@ -255,7 +255,7 @@ export default function InsightsDashboard() {
                   disabled={isAnalyzing || !reportLoaded}
                   className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
                 >
-                  {isAnalyzing ? "Analyzing…" : "Generate diagnostics"}
+                  {isAnalyzing ? "Reviewing…" : "Generate AI review"}
                 </button>
               </div>
             </CardContent>
@@ -269,8 +269,8 @@ export default function InsightsDashboard() {
               <h2 className="mb-0 mt-2 text-lg font-semibold">Evidence and recommendations</h2>
               {!report && (
                 <p className="mb-0 mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm leading-6 text-slate-600">
-                  Run diagnostics to receive location-aware findings. This view does not claim compiler output or AI
-                  measurements that were not produced.
+                  Generate the review to combine deterministic checks, available trace evidence, and an optional OpenAI
+                  explanation. The report keeps observed evidence separate from inferences.
                 </p>
               )}
               {error && (
@@ -284,8 +284,48 @@ export default function InsightsDashboard() {
               {report && (
                 <>
                   <div className="mt-5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-xs leading-5 text-sky-800">
-                    <strong>Analysis mode: deterministic.</strong> {report.compiler.note}
+                    <strong>
+                      Analysis mode:{" "}
+                      {report.analysis === "deterministic+ai" ? "deterministic + OpenAI" : "deterministic"}.
+                    </strong>{" "}
+                    {report.compiler.note}
                   </div>
+                  {report.ai?.status === "unavailable" && (
+                    <p className="mb-0 mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-3 text-xs leading-5 text-amber-800">
+                      OpenAI review is unavailable: {report.ai.note}
+                    </p>
+                  )}
+                  {report.ai?.status === "failed" && (
+                    <p className="mb-0 mt-3 rounded-lg border border-rose-200 bg-rose-50 px-3 py-3 text-xs leading-5 text-rose-800">
+                      OpenAI review failed: {report.ai.note}
+                    </p>
+                  )}
+                  {report.ai?.status === "completed" && (
+                    <section className="mt-4 rounded-lg border border-emerald-200 bg-emerald-50 p-4">
+                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-800">
+                        OpenAI review · {report.ai.result.model}
+                      </p>
+                      <p className="mb-0 mt-2 text-sm leading-6 text-emerald-950">{report.ai.result.summary}</p>
+                      <div className="mt-3 space-y-3">
+                        {report.ai.result.diagnostics.map(diagnostic => (
+                          <article
+                            key={`${diagnostic.code}-${diagnostic.location.line}`}
+                            className="rounded-md border border-emerald-200 bg-white p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <code className="font-semibold text-emerald-800">{diagnostic.code}</code>
+                              <span className="text-xs text-emerald-700">line {diagnostic.location.line}</span>
+                            </div>
+                            <p className="mb-0 mt-2 text-sm font-semibold text-slate-900">{diagnostic.title}</p>
+                            <p className="mb-0 mt-2 text-xs leading-5 text-slate-700">{diagnostic.inference}</p>
+                            <p className="mb-0 mt-2 text-xs leading-5 text-emerald-900">
+                              <strong>Suggested action:</strong> {diagnostic.recommendation}
+                            </p>
+                          </article>
+                        ))}
+                      </div>
+                    </section>
+                  )}
                   <div className="mt-4 space-y-3">
                     {report.diagnostics.length === 0 ? (
                       <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
@@ -336,7 +376,9 @@ export default function InsightsDashboard() {
                       ? "Copied coding-agent handoff"
                       : copyState === "failed"
                         ? "Clipboard unavailable"
-                        : "Copy coding-agent handoff"}
+                        : report.ai?.status === "completed"
+                          ? "Copy AI + evidence coding-agent handoff"
+                          : "Copy evidence coding-agent handoff"}
                   </button>
                 </>
               )}

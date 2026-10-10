@@ -35,6 +35,17 @@ const config: HardhatUserConfig = {
           },
         },
       },
+      {
+        // Uploaded contracts may use the currently common OpenZeppelin-compatible pragma.
+        // Keeping this alongside 0.8.20 preserves the fixture compiler configuration.
+        version: "0.8.24",
+        settings: {
+          optimizer: {
+            enabled: true,
+            runs: 200,
+          },
+        },
+      },
     ],
   },
   defaultNetwork: "localhost",

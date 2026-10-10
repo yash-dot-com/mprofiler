@@ -1,6 +1,5 @@
 import type { TraceAccessReport } from "./traceAccess";
 import { buildProfileGraph } from "./profileGraph";
-import type { ScenarioId } from "./profileWorkloads";
 
 export type ProfileReportCall = {
   workloadCaseId?: string;
@@ -23,7 +22,7 @@ export type ProfileReport = {
   contract: { name: string; address: string; scenarioAddresses?: Record<string, string> };
   workload: {
     id: string;
-    scenarios: ScenarioId[];
+    scenarios: string[];
     batchSize: number;
     controlledAccountCount: number;
     inputs: string[];
@@ -72,35 +71,56 @@ export function validateProfileReport(value: unknown): asserts value is ProfileR
   if (value.traceCoverage !== "complete" && value.traceCoverage !== "partial") {
     throw new Error("Invalid MProfiler report: traceCoverage must be complete or partial.");
   }
-  if (!isRecord(value.metricProvenance) || !Array.isArray(value.metricProvenance.localMeasurements)
-    || !Array.isArray(value.metricProvenance.derivedGraphProperties)
-    || typeof value.metricProvenance.monadSpecificEstimates !== "string") {
+  if (
+    !isRecord(value.metricProvenance) ||
+    !Array.isArray(value.metricProvenance.localMeasurements) ||
+    !Array.isArray(value.metricProvenance.derivedGraphProperties) ||
+    typeof value.metricProvenance.monadSpecificEstimates !== "string"
+  ) {
     throw new Error("Invalid MProfiler report: metric provenance is missing.");
   }
   const graph = value.dependencyGraph;
-  if (!isRecord(graph) || !Array.isArray(graph.nodes) || !Array.isArray(graph.edges)
-    || !Array.isArray(graph.evidence) || !Array.isArray(graph.hotSlots)) {
+  if (
+    !isRecord(graph) ||
+    !Array.isArray(graph.nodes) ||
+    !Array.isArray(graph.edges) ||
+    !Array.isArray(graph.evidence) ||
+    !Array.isArray(graph.hotSlots)
+  ) {
     throw new Error("Invalid MProfiler report: incomplete dependency graph.");
   }
   const evidenceIds = new Set<string>();
   for (const evidence of graph.evidence) {
-    if (!isRecord(evidence) || typeof evidence.id !== "string" || typeof evidence.contractAddress !== "string"
-      || typeof evidence.slot !== "string" || (evidence.mode !== "read" && evidence.mode !== "write")
-      || typeof evidence.txIndex !== "number") {
+    if (
+      !isRecord(evidence) ||
+      typeof evidence.id !== "string" ||
+      typeof evidence.contractAddress !== "string" ||
+      typeof evidence.slot !== "string" ||
+      (evidence.mode !== "read" && evidence.mode !== "write") ||
+      typeof evidence.txIndex !== "number"
+    ) {
       throw new Error("Invalid MProfiler report: malformed storage evidence.");
     }
     evidenceIds.add(evidence.id);
   }
   for (const edge of graph.edges) {
-    if (!isRecord(edge) || !Array.isArray(edge.evidenceIds)
-      || edge.evidenceIds.some(id => typeof id !== "string" || !evidenceIds.has(id))
-      || !Array.isArray(edge.sharedSlots)) {
+    if (
+      !isRecord(edge) ||
+      !Array.isArray(edge.evidenceIds) ||
+      edge.evidenceIds.some(id => typeof id !== "string" || !evidenceIds.has(id)) ||
+      !Array.isArray(edge.sharedSlots)
+    ) {
       throw new Error("Invalid MProfiler report: dependency edge references invalid evidence.");
     }
   }
   for (const call of value.calls) {
-    if (!isRecord(call) || !isRecord(call.trace) || typeof call.trace.complete !== "boolean"
-      || !Array.isArray(call.trace.accesses) || !Array.isArray(call.trace.warnings)) {
+    if (
+      !isRecord(call) ||
+      !isRecord(call.trace) ||
+      typeof call.trace.complete !== "boolean" ||
+      !Array.isArray(call.trace.accesses) ||
+      !Array.isArray(call.trace.warnings)
+    ) {
       throw new Error("Invalid MProfiler report: malformed call trace.");
     }
   }
@@ -116,7 +136,7 @@ export function createProfileReport(input: {
   scenarioAddresses?: Record<string, string>;
   workload?: {
     id: string;
-    scenarios: ScenarioId[];
+    scenarios: string[];
     batchSize: number;
     controlledAccountCount: number;
   };
@@ -133,9 +153,10 @@ export function createProfileReport(input: {
       network: input.network ?? "hardhat",
       chainId: input.chainId.toString(),
       compilerVersion: input.compilerVersion,
-      executionNote: input.network === "anvil"
-        ? "Disposable local Anvil EVM; graph metrics are derived from this local workload and do not represent Monad Testnet/Mainnet or actual scheduler decisions."
-        : "Ephemeral local Hardhat EVM; these measurements do not represent Monad Testnet or Mainnet execution.",
+      executionNote:
+        input.network === "anvil"
+          ? "Disposable local Anvil EVM; graph metrics are derived from this local workload and do not represent Monad Testnet/Mainnet or actual scheduler decisions."
+          : "Ephemeral local Hardhat EVM; these measurements do not represent Monad Testnet or Mainnet execution.",
     },
     contract: {
       name: input.contractName ?? "YourContract",
@@ -162,7 +183,8 @@ export function createProfileReport(input: {
     metricProvenance: {
       localMeasurements: ["transaction receipt gasUsed", "observed SLOAD/SSTORE trace steps"],
       derivedGraphProperties: ["storage dependency edges", "modeled graph depth", "hot-slot touch and edge counts"],
-      monadSpecificEstimates: "None generated. This report does not measure or estimate actual Monad scheduler decisions.",
+      monadSpecificEstimates:
+        "None generated. This report does not measure or estimate actual Monad scheduler decisions.",
     },
     calls: input.calls,
     traceCoverage: input.calls.every(call => call.trace.complete) ? "complete" : "partial",
@@ -176,7 +198,7 @@ export function createProfileReport(input: {
     },
     findings: [],
     limitations: [
-      "This deterministic scenario runner profiles compiled local workload contracts; it does not profile arbitrary uploaded source.",
+      "This report covers one isolated local EVM execution. It does not measure Monad Testnet/Mainnet execution or scheduler decisions.",
       "Calls run sequentially on a local Hardhat EVM with a fixed input sequence.",
       "Structured compiler diagnostics and source locations are not captured by this report.",
       "Nested CALL, CALLCODE, DELEGATECALL, and STATICCALL storage contexts are not resolved by the current adapter; affected traces are marked incomplete.",

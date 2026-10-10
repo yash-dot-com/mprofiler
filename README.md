@@ -6,12 +6,12 @@ MProfiler is an evidence-first profiler for Solidity storage workloads on Monad-
 
 It gives developers one practical workflow:
 
-1. Connect a Monad Testnet wallet and deploy the public workload fixture.
-2. Run a deterministic **local** Hardhat workload profile.
+1. Upload a Solidity baseline and define the state-changing calls to exercise.
+2. Compile and deploy it into a disposable **local** Hardhat EVM.
 3. Inspect real receipt gas, normalized `SLOAD`/`SSTORE` evidence, hot storage slots, and derived dependency edges.
-4. Compare a baseline contract and a revision with identical generated inputs and reset state.
+4. Upload a compatible revision and compare it under the identical call manifest and reset state.
 5. Review compiler-style Solidity performance diagnostics and copy an evidence-bound handoff into a coding agent.
-6. Publish the completed report's Keccak-256 hash through a wallet-signed Monad Testnet attestation.
+6. Optionally deploy the public fixture and publish the completed report's Keccak-256 hash through a wallet-signed Monad Testnet attestation.
 
 > MProfiler does **not** measure or claim Monad scheduler decisions, realized parallelism, TPS, or wall-clock throughput. Local receipt gas and traces are measurements; dependency edges and hot slots are derived from those traces; Monad Testnet checks are bounded integration evidence.
 
@@ -20,9 +20,9 @@ It gives developers one practical workflow:
 | Area | Included now |
 | --- | --- |
 | Deterministic workloads | Independent mapping writes, shared global-counter writes, same-key writes, mixed reads/writes, and read-heavy calls. |
-| Local profiler | Controlled Hardhat accounts, bounded batch sizes, receipt gas, opcode traces, normalized storage accesses, graph edges, waves, and hot slots. |
-| Baseline vs revision | Same generated inputs and a reset state snapshot before comparison. Gas, calls, accesses, hot slots, and derived edges are compared. |
-| Contract insights | Deterministic, source-location diagnostics for shared counters, repeated mapping access sites, and computed keys. Includes a copyable coding-agent handoff. |
+| Local profiler | Uploaded Solidity source or reference fixtures, controlled Hardhat accounts, bounded call manifests, receipt gas, opcode traces, normalized storage accesses, graph edges, waves, and hot slots. |
+| Baseline vs revision | The same explicit call manifest and a reset state snapshot before comparison. Gas, calls, accesses, hot slots, and derived edges are compared. |
+| Contract insights | Deterministic, source-location diagnostics plus an optional OpenAI review that returns structured, evidence-bound recommendations and a copyable coding-agent handoff. |
 | Monad Testnet | Connected-wallet fixture deployment, bounded signer-based integration check, and public report-hash attestation. |
 | Hosted demo | Next.js frontend/API on Vercel and the isolated Hardhat worker on Render. |
 
@@ -90,19 +90,43 @@ MPROFILER_WORKER_TOKEN=replace-with-a-random-token-at-least-24-characters
 
 Never use `NEXT_PUBLIC_` for either worker setting.
 
-### 3. Run a profile in the dashboard
+### Optional: enable OpenAI contract review
 
-1. Set a batch size from `1` to `100`.
-2. Set `2` to `20` controlled accounts.
-3. Leave `ProfileWorkloadsRevision` selected to create a valid baseline-versus-revision comparison.
-4. Click **Run local profile**.
-5. When the job completes, inspect the evidence cards and charts, then open **Compare** or **Analyze contract source**.
+Set this server-only value in `packages/nextjs/.env.local`, then restart the Next.js dashboard:
 
-A batch size of `2` and two controlled accounts is the quickest smoke test. The local worker queues one active job and up to three waiting jobs. Completed job reports remain in memory for 15 minutes, so keep the worker process running while demonstrating the app.
+```bash
+OPENAI_API_KEY=replace-with-your-api-key
+# Optional. Defaults to gpt-6-astra.
+MPROFILER_OPENAI_MODEL=gpt-6-astra
+```
+
+The Insights route sends the uploaded source, deterministic diagnostics, and available local trace evidence to OpenAI's Responses API. It requests a structured review and keeps the original local evidence visible in the report. Never expose this key with a `NEXT_PUBLIC_` prefix.
+
+### 3. Profile a real contract in the dashboard
+
+1. In **Profile your contract**, upload or paste the baseline `.sol` source (up to 64 KB).
+2. Enter the exact Solidity contract name and its constructor arguments as a JSON array.
+3. Enter a transaction manifest. Each state-changing call provides its ABI signature, JSON arguments, controlled caller index, and repetition count.
+4. Optionally provide a compatible revision source.
+5. Click **Compile + profile**. When the job completes, inspect the evidence cards and charts, then open **Compare** or **Analyze contract source**.
+
+For example:
+
+```json
+[
+  { "function": "setValue(uint256)", "args": [1], "caller": 0, "repeat": 2 }
+]
+```
+
+Use an ABI signature for an overloaded method. Calls must change state, because only transactions create receipts and execution traces. The local worker queues one active job and up to three waiting jobs. Completed job reports remain in memory for 15 minutes, so keep the worker process running while demonstrating the app.
 
 ## What the profiler measures
 
-### Five deterministic scenarios
+### Uploaded-contract runs and five reference scenarios
+
+An uploaded-contract run compiles the submitted source with the project's Solidity `0.8.20` or `0.8.24` compiler configuration, deploys it to a disposable in-process Hardhat EVM, and executes the requested call manifest sequentially through controlled accounts. The worker resets that EVM snapshot before executing an optional revision with the same encoded calls.
+
+The **Reference demo** still provides these five deterministic fixture scenarios:
 
 | Scenario | Purpose |
 | --- | --- |
@@ -138,7 +162,7 @@ MProfiler rejects the premise of a performance comparison unless the baseline an
 - Derived dependency-edge and hot-slot counts
 - Per-scenario gas, read, write, and edge values
 
-The default revision, `ProfileWorkloadsRevision`, implements the same five-method workload interface. To compare another revision, compile a contract with the same methods and supply its artifact name in the dashboard:
+For an uploaded contract, supply a revision with the same contract name, compatible constructor, and callable methods. MProfiler rejects a comparison unless the encoded inputs match exactly. The Reference demo uses `ProfileWorkloadsRevision`, which implements the same five-method fixture interface:
 
 ```text
 writeIndependent(uint256,uint256)
@@ -148,7 +172,7 @@ mixedReadWrite(uint256,uint256)
 readHeavy(uint256)
 ```
 
-Arbitrary uploaded Solidity source is not run as a profiling target. This keeps workload generation deterministic and prevents an uploaded contract from becoming an unbounded worker execution path.
+The worker accepts one source file per version, caps each source at 64 KB, caps the manifest at 20 call definitions / 100 total calls, runs one job at a time, and uses a five-minute maximum execution time. It is intended for trusted development projects, not as a public multi-tenant contract sandbox.
 
 ## Contract insights and coding-agent handoff
 
@@ -323,7 +347,8 @@ The direct scenario command writes:
 | `packages/hardhat/contracts/ProfileWorkloads.sol` | Deterministic baseline workload fixture. |
 | `packages/hardhat/contracts/ProfileWorkloadsRevision.sol` | Comparable revision fixture. |
 | `packages/hardhat/contracts/MProfilerAttestation.sol` | On-chain Testnet report-hash registry. |
-| `packages/hardhat/scripts/profile-scenarios.ts` | Local workload runner and report writer. |
+| `packages/hardhat/scripts/profile-scenarios.ts` | Local reference-fixture workload runner and report writer. |
+| `packages/hardhat/scripts/profile-contract.ts` | Uploaded-contract compiler, isolated local deployer, manifest executor, and report writer. |
 | `packages/hardhat/scripts/traceAccess.ts` | EVM storage trace normalization. |
 | `packages/hardhat/scripts/profileGraph.ts` | Evidence-linked dependency graph and hot-slot derivation. |
 | `packages/hardhat/scripts/worker-server.mjs` | Bounded isolated worker for Render or local use. |
@@ -336,6 +361,6 @@ The direct scenario command writes:
 
 - Keep `.env`, `.env.local`, worker tokens, QuickNode URLs, and signer keys out of Git.
 - Use a dedicated, funded Testnet wallet or encrypted signer. Never reuse a mainnet private key for a demo.
-- Uploaded source is analyzed as text only. It is not compiled or executed by the worker.
+- Uploaded source is compiled and executed only in the disposable local worker EVM under the documented source, call-count, queue, output, and timeout limits. It is never deployed to Monad Testnet automatically.
 - A report hash proves the exact bytes that were attested. It does not make local measurements into Monad scheduler measurements.
 - The worker has bounded request size, queue size, output size, report retention, and execution timeout. It is not a multi-tenant arbitrary-contract execution service.

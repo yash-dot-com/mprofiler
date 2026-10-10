@@ -4479,6 +4479,7 @@ __metadata:
     next: 15.5.18
     next-nprogress-bar: ~2.3.13
     next-themes: ~0.3.0
+    openai: ^7.32.0
     postcss: ~8.4.45
     prettier: ~3.5.3
     qrcode.react: ~4.0.1
@@ -14784,6 +14785,33 @@ __metadata:
     is-docker: ^2.1.1
     is-wsl: ^2.2.0
   checksum: e9545bec64cdbf30a0c35c1bdc310344adf8428a117f7d8df3c0af0a0a24c513b304916a6d9b11db0190ff7225c2d578885080b761ed46a3d5f6f1eebb98b63c
+  languageName: node
+  linkType: hard
+
+"openai@npm:^7.32.0":
+  version: 7.32.0
+  resolution: "openai@npm:7.32.0"
+  peerDependencies:
+    "@aws-sdk/credential-provider-node": ">=3.972.0 <4"
+    "@smithy/hash-node": ">=4.3.0 <5"
+    "@smithy/signature-v4": ">=5.4.0 <6"
+    undici: ">=5 <9"
+    ws: ^8.21.0
+    zod: ^3.25 || ^4.0
+  peerDependenciesMeta:
+    "@aws-sdk/credential-provider-node":
+      optional: true
+    "@smithy/hash-node":
+      optional: true
+    "@smithy/signature-v4":
+      optional: true
+    undici:
+      optional: true
+    ws:
+      optional: true
+    zod:
+      optional: true
+  checksum: d50722ccdb43abec2cd1787d8574d85a55d8870ae0fea617d268e6d11f77aa388274b03c15ff61d2013df6605aba061ef0440b2cdab2f511a5a69429d86c000d
   languageName: node
   linkType: hard
 

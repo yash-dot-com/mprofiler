@@ -18,12 +18,25 @@ export type InsightDiagnostic = {
   recommendation: string;
 };
 
+export type AIInsights = {
+  model: string;
+  summary: string;
+  diagnostics: InsightDiagnostic[];
+  handoff: {
+    goal: string;
+    requestedChanges: string[];
+    tradeoffs: string[];
+    verification: string[];
+  };
+};
+
 export type ContractInsightsReport = {
-  analysis: "deterministic";
+  analysis: "deterministic" | "deterministic+ai";
   sourceLines: number;
   compiler: { status: "not-run"; note: string };
   evidence: ProfilingEvidence;
   diagnostics: InsightDiagnostic[];
+  ai?: { status: "completed"; result: AIInsights } | { status: "unavailable" | "failed"; note: string };
 };
 
 function locationAt(source: string, index: number, width: number): SourceLocation {
@@ -141,10 +154,21 @@ export function createCodingAgentHandoff(source: string, report: ContractInsight
             ].join("\n"),
           )
           .join("\n\n");
+  const aiHandoff =
+    report.ai?.status === "completed"
+      ? [
+          `AI review summary: ${report.ai.result.summary}`,
+          `AI goal: ${report.ai.result.handoff.goal}`,
+          `AI requested changes: ${report.ai.result.handoff.requestedChanges.join(" ")}`,
+          `AI trade-offs: ${report.ai.result.handoff.tradeoffs.join(" ")}`,
+          `AI verification: ${report.ai.result.handoff.verification.join(" ")}`,
+        ].join("\n")
+      : "AI review: unavailable. Use the deterministic findings and observed evidence below.";
   return [
     "Goal: Improve the identified performance characteristic without claiming unmeasured Monad scheduler behavior.",
     `Evidence: The source below has ${report.sourceLines} lines. Analysis mode: ${report.analysis}.`,
     diagnostics,
+    aiHandoff,
     "Constraints: Preserve behavior, access control, event semantics, accounting, and required invariants. Do not infer parallelism from receipts, Promise.all, transaction counts, or wall-clock throughput.",
     "Requested changes: Propose the smallest revision, explain trade-offs, and identify any behavior that needs explicit approval.",
     "Verification: Compile, run tests, and profile the revision with the identical deterministic workload. Report local measurements separately from graph-derived properties and Monad Testnet observations.",
