@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: mprofiler-worker
+    runtime: node
+    region: singapore
+    plan: free
+    buildCommand: corepack enable && yarn install --immutable && yarn workspace @se-2/hardhat compile
+    startCommand: yarn workspace @se-2/hardhat worker
+    envVars:
+      - key: MPROFILER_WORKER_HOST
+        value: 0.0.0.0
+      - key: MPROFILER_WORKER_TOKEN
+        sync: false

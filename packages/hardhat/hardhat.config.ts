@@ -54,8 +54,12 @@ const config: HardhatUserConfig = {
       },
     },
     monadTestnet: {
-      url: `https://testnet-rpc.monad.xyz/`,
-      accounts: [deployerPrivateKey],
+      url: process.env.QUICKNODE_MONAD_TESTNET_RPC_URL || "https://testnet-rpc.monad.xyz/",
+      // Public RPC connections can take longer than a local Hardhat provider. Keep the
+      // bounded Testnet checkpoint from failing on a short connect delay.
+      timeout: 120_000,
+      // Never use Hardhat's public demo key as a Testnet signer.
+      accounts: process.env.__RUNTIME_DEPLOYER_PRIVATE_KEY ? [deployerPrivateKey] : [],
       chainId: 10143,
     },
   },

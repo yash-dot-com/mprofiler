@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { usePathname } from "next/navigation";
 import { RainbowKitProvider, darkTheme, lightTheme } from "@rainbow-me/rainbowkit";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { AppProgressBar as ProgressBar } from "next-nprogress-bar";
@@ -14,6 +15,7 @@ import { useInitializeNativeCurrencyPrice } from "~~/hooks/scaffold-eth";
 import { wagmiConfig } from "~~/services/web3/wagmiConfig";
 
 const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
+  const pathname = usePathname();
   useInitializeNativeCurrencyPrice();
 
   return (
@@ -21,7 +23,7 @@ const ScaffoldEthApp = ({ children }: { children: React.ReactNode }) => {
       <div className={`flex flex-col min-h-screen `}>
         <Header />
         <main className="relative flex flex-col flex-1">{children}</main>
-        <Footer />
+        {pathname !== "/" && <Footer />}
       </div>
       <Toaster />
     </>

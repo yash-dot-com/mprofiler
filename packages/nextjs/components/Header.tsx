@@ -60,6 +60,8 @@ export const HeaderMenuLinks = () => {
 export const Header = () => {
   const { targetNetwork } = useTargetNetwork();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
+  const pathname = usePathname();
+  const isProfilerPage = ["/", "/compare", "/insights"].includes(pathname);
 
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
@@ -67,38 +69,93 @@ export const Header = () => {
   });
 
   return (
-    <div className="sticky lg:static top-0 navbar bg-base-100 min-h-0 shrink-0 justify-between z-20 shadow-md shadow-secondary px-0 sm:px-2">
-      <div className="navbar-start w-auto lg:w-1/2">
-        <details className="dropdown" ref={burgerMenuRef}>
-          <summary className="ml-1 btn btn-ghost lg:hidden hover:bg-transparent">
-            <Bars3Icon className="h-1/2" />
-          </summary>
-          <ul
-            className="menu menu-compact dropdown-content mt-3 p-2 shadow-sm bg-base-100 rounded-box w-52"
-            onClick={() => {
-              burgerMenuRef?.current?.removeAttribute("open");
-            }}
-          >
-            <HeaderMenuLinks />
-          </ul>
-        </details>
-        <Link href="/" passHref className="hidden lg:flex items-center gap-2 ml-4 mr-6 shrink-0">
-          <div className="flex relative w-10 h-10">
-            <Image alt="SE2 logo" className="cursor-pointer" fill src="/logo.svg" />
+    <div
+      className={`${isProfilerPage ? "border-b border-white/10 bg-[#07070c]" : "sticky top-0 z-20 navbar min-h-0 shrink-0 justify-between bg-base-100 px-0 shadow-md shadow-secondary sm:px-2 lg:static"}`}
+    >
+      {isProfilerPage ? (
+        <div className="mx-auto flex min-h-[62px] w-full max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
+          <div className="flex items-center gap-4">
+            <Link href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-[-0.04em] text-white">
+              <span
+                aria-hidden="true"
+                className="grid h-8 w-8 place-items-center rounded-md bg-[#315cf5] text-sm font-bold text-white"
+              >
+                M
+              </span>
+              MProfiler
+            </Link>
+            <span className="hidden h-7 border-l border-white/10 sm:block" />
+            <span className="hidden items-center gap-2 text-sm text-[#aaa9bb] sm:flex">
+              <i className="h-2 w-2 rounded-full bg-emerald-500" />
+              Local EVM
+            </span>
           </div>
-          <div className="flex flex-col">
-            <span className="font-bold leading-tight">Scaffold-ETH</span>
-            <span className="text-xs">Ethereum dev stack</span>
+          <nav aria-label="Main navigation" className="flex items-center gap-5 text-sm">
+            <Link
+              href="/"
+              aria-current={pathname === "/" ? "page" : undefined}
+              className={`py-[22px] font-semibold transition-colors ${pathname === "/" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
+            >
+              Profiler
+            </Link>
+            <Link
+              href="/compare"
+              aria-current={pathname === "/compare" ? "page" : undefined}
+              className={`py-[22px] font-semibold transition-colors ${pathname === "/compare" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
+            >
+              Compare
+            </Link>
+            <Link
+              href="/insights"
+              aria-current={pathname === "/insights" ? "page" : undefined}
+              className={`py-[22px] font-semibold transition-colors ${pathname === "/insights" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
+            >
+              Insights
+            </Link>
+            <Link
+              href="/debug"
+              prefetch={false}
+              className="py-[22px] text-[#aaa9bb] transition-colors hover:text-white"
+            >
+              Contracts
+            </Link>
+          </nav>
+        </div>
+      ) : (
+        <>
+          <div className="navbar-start w-auto lg:w-1/2">
+            <details className="dropdown" ref={burgerMenuRef}>
+              <summary className="btn btn-ghost ml-1 hover:bg-transparent lg:hidden">
+                <Bars3Icon className="h-1/2" />
+              </summary>
+              <ul
+                className="menu menu-compact dropdown-content mt-3 w-52 rounded-box bg-base-100 p-2 shadow-sm"
+                onClick={() => {
+                  burgerMenuRef?.current?.removeAttribute("open");
+                }}
+              >
+                <HeaderMenuLinks />
+              </ul>
+            </details>
+            <Link href="/" passHref className="ml-4 mr-6 hidden shrink-0 items-center gap-2 lg:flex">
+              <div className="relative flex h-10 w-10">
+                <Image alt="SE2 logo" className="cursor-pointer" fill src="/logo.svg" />
+              </div>
+              <div className="flex flex-col">
+                <span className="font-bold leading-tight">Scaffold-ETH</span>
+                <span className="text-xs">Ethereum dev stack</span>
+              </div>
+            </Link>
+            <ul className="menu menu-horizontal hidden gap-2 px-1 lg:flex lg:flex-nowrap">
+              <HeaderMenuLinks />
+            </ul>
           </div>
-        </Link>
-        <ul className="hidden lg:flex lg:flex-nowrap menu menu-horizontal px-1 gap-2">
-          <HeaderMenuLinks />
-        </ul>
-      </div>
-      <div className="navbar-end grow mr-4">
-        <RainbowKitCustomConnectButton />
-        {isLocalNetwork && <FaucetButton />}
-      </div>
+          <div className="navbar-end mr-4 grow">
+            <RainbowKitCustomConnectButton />
+            {isLocalNetwork && <FaucetButton />}
+          </div>
+        </>
+      )}
     </div>
   );
 };
