@@ -9,6 +9,7 @@ import {
   type ProfilingEvidence,
   createCodingAgentHandoff,
 } from "~~/lib/mprofiler/insights";
+import { loadStoredProfileResult } from "~~/lib/mprofiler/profileStorage";
 
 const fixtureSource = `// SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
@@ -84,6 +85,7 @@ export default function InsightsDashboard() {
   const [error, setError] = useState<string | null>(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [evidenceRestoredFromBrowser, setEvidenceRestoredFromBrowser] = useState(false);
 
   useEffect(() => {
     const attachedSource = window.sessionStorage.getItem(insightSourceStorageKey);
@@ -102,8 +104,14 @@ export default function InsightsDashboard() {
         if (!cancelled) setEvidence(createEvidence(profile));
       })
       .catch(requestError => {
-        if (!cancelled)
+        const saved = loadStoredProfileResult();
+        const savedJob = saved?.job as { id?: unknown } | undefined;
+        if (!cancelled && savedJob?.id === jobId && saved?.report) {
+          setEvidence(createEvidence(saved.report as ReportEvidence));
+          setEvidenceRestoredFromBrowser(true);
+        } else if (!cancelled) {
           setReportError(requestError instanceof Error ? requestError.message : "Could not load profiling evidence.");
+        }
       })
       .finally(() => {
         if (!cancelled) setReportLoaded(true);
@@ -194,6 +202,11 @@ export default function InsightsDashboard() {
             className="mt-4 rounded-lg border border-amber-300/30 bg-amber-400/[0.08] px-4 py-3 text-sm text-amber-100"
           >
             Profiling evidence could not be loaded: {reportError}
+          </p>
+        )}
+        {evidenceRestoredFromBrowser && (
+          <p className="mt-4 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm text-sky-100">
+            Profiling evidence was restored from this browser&apos;s saved completed report.
           </p>
         )}
         <section className="mt-5 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { AttestationCard } from "~~/components/mprofiler/AttestationCard";
@@ -14,6 +14,11 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "~~/components/ui/chart";
+import {
+  clearStoredProfileResult,
+  loadStoredProfileResult,
+  saveProfileResult,
+} from "~~/lib/mprofiler/profileStorage";
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "expired";
 type ProfileJob = { id: string; status: JobStatus; createdAt: string; updatedAt: string; error: string | null };
@@ -181,6 +186,26 @@ const MProfilerDashboard = () => {
   const [isReconnecting, setIsReconnecting] = useState(false);
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [activeMatrixSlot, setActiveMatrixSlot] = useState<HotSlot | null>(null);
+  const [browserResultRestored, setBrowserResultRestored] = useState(false);
+  const [storageReady, setStorageReady] = useState(false);
+
+  useEffect(() => {
+    const saved = loadStoredProfileResult();
+    if (saved) {
+      const savedJob = saved.job as Partial<ProfileJob>;
+      if (typeof savedJob.id === "string" && savedJob.status === "completed") {
+        setJob(saved.job as ProfileJob);
+        setReport(saved.report as ProfileReport);
+        setBrowserResultRestored(true);
+      }
+    }
+    setStorageReady(true);
+  }, []);
+
+  useEffect(() => {
+    if (!storageReady || job?.status !== "completed" || !report) return;
+    saveProfileResult(job, report);
+  }, [job, report, storageReady]);
 
   const watchJob = async (initialJob: ProfileJob) => {
     let current = initialJob;
@@ -198,9 +223,11 @@ const MProfilerDashboard = () => {
     }
     if (current.status === "completed") {
       try {
-        setReport(
-          await readJson<ProfileReport>(await fetch(`/api/profile/jobs/${current.id}/report`, { cache: "no-store" })),
+        const completedReport = await readJson<ProfileReport>(
+          await fetch(`/api/profile/jobs/${current.id}/report`, { cache: "no-store" }),
         );
+        saveProfileResult(current, completedReport);
+        setReport(completedReport);
       } catch (requestError) {
         setError(requestError instanceof Error ? requestError.message : "Could not retrieve the completed report.");
       }
@@ -219,6 +246,7 @@ const MProfilerDashboard = () => {
     setError(null);
     setCopyState("idle");
     setActiveMatrixSlot(null);
+    setBrowserResultRestored(false);
     try {
       const startedJob = await readJson<ProfileJob>(
         await fetch("/api/profile/jobs", {
@@ -251,6 +279,15 @@ const MProfilerDashboard = () => {
     } finally {
       setIsReconnecting(false);
     }
+  };
+
+  const clearSavedResult = () => {
+    clearStoredProfileResult();
+    setJob(null);
+    setReport(null);
+    setError(null);
+    setBrowserResultRestored(false);
+    setActiveMatrixSlot(null);
   };
 
   const isActive = job?.status === "queued" || job?.status === "running";
@@ -468,7 +505,22 @@ const MProfilerDashboard = () => {
                 {isReconnecting ? "Reconnecting…" : "Reconnect to job"}
               </button>
             )}
+            {browserResultRestored && job?.status === "completed" && (
+              <button
+                className="text-sm font-semibold text-[#d8d6e1] underline underline-offset-4 hover:text-white"
+                onClick={clearSavedResult}
+                type="button"
+              >
+                Clear saved result
+              </button>
+            )}
           </section>
+        )}
+        {browserResultRestored && baseline && (
+          <p className="mt-4 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm leading-6 text-sky-100">
+            Restored the completed profile from this browser. Its report remains available here, in Comparison, and in
+            Insights after navigation or refresh.
+          </p>
         )}
         {error && (
           <div

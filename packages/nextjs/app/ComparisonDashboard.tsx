@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { Card, CardContent } from "~~/components/ui/card";
+import { loadStoredProfileResult } from "~~/lib/mprofiler/profileStorage";
 
 type Call = { workloadCaseId: string; trace: { accesses: unknown[] } };
 type Side = {
@@ -60,6 +61,7 @@ export default function ComparisonDashboard() {
   const [report, setReport] = useState<Report | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(Boolean(jobId));
+  const [restoredFromBrowser, setRestoredFromBrowser] = useState(false);
 
   useEffect(() => {
     if (!jobId) return;
@@ -70,8 +72,14 @@ export default function ComparisonDashboard() {
         if (!cancelled) setReport(nextReport);
       })
       .catch(requestError => {
-        if (!cancelled)
+        const saved = loadStoredProfileResult();
+        const savedJob = saved?.job as { id?: unknown } | undefined;
+        if (!cancelled && savedJob?.id === jobId && saved?.report) {
+          setReport(saved.report as Report);
+          setRestoredFromBrowser(true);
+        } else if (!cancelled) {
           setError(requestError instanceof Error ? requestError.message : "Could not retrieve this report.");
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -139,6 +147,11 @@ export default function ComparisonDashboard() {
             className="mt-6 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100"
           >
             {error}
+          </p>
+        )}
+        {restoredFromBrowser && (
+          <p className="mt-6 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm text-sky-100">
+            Loaded the saved browser copy of this completed report. The worker&apos;s temporary copy is unavailable.
           </p>
         )}
         {baseline && (
