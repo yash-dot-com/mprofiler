@@ -61,7 +61,7 @@ export const Header = () => {
   const { targetNetwork } = useTargetNetwork();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
   const pathname = usePathname();
-  const isProfilerPage = ["/", "/compare", "/insights"].includes(pathname);
+  const isProfilerPage = ["/", "/compare", "/insights", "/debug"].includes(pathname);
 
   const burgerMenuRef = useRef<HTMLDetailsElement>(null);
   useOutsideClick(burgerMenuRef, () => {
@@ -115,7 +115,8 @@ export const Header = () => {
             <Link
               href="/debug"
               prefetch={false}
-              className="py-[22px] text-[#aaa9bb] transition-colors hover:text-white"
+              aria-current={pathname === "/debug" ? "page" : undefined}
+              className={`py-[22px] font-semibold transition-colors ${pathname === "/debug" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
             >
               Contracts
             </Link>

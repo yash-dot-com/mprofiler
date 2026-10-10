@@ -57,10 +57,13 @@ export const DisplayVariable = ({
   }, [error]);
 
   return (
-    <div className="space-y-1 pb-2">
+    <div className="space-y-1 py-3 first:pt-0 last:pb-0">
       <div className="flex items-center">
-        <h3 className="font-medium text-lg mb-0 break-all">{abiFunction.name}</h3>
-        <button className="btn btn-ghost btn-xs" onClick={async () => await refetch()}>
+        <h3 className="mb-0 break-all font-mono text-sm font-semibold text-white">{abiFunction.name}</h3>
+        <button
+          className="ml-1 rounded p-1 text-[#aaa9bb] hover:bg-white/10 hover:text-white"
+          onClick={async () => await refetch()}
+        >
           {isFetching ? (
             <span className="loading loading-spinner loading-xs"></span>
           ) : (
@@ -69,7 +72,7 @@ export const DisplayVariable = ({
         </button>
         <InheritanceTooltip inheritedFrom={inheritedFrom} />
       </div>
-      <div className="text-base-content/80 flex flex-col items-start">
+      <div className="flex flex-col items-start font-mono text-sm text-[#bdbbc8]">
         <div>
           <div
             className={`break-all block transition bg-transparent ${

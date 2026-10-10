@@ -71,7 +71,7 @@ export const ReadOnlyFunctionForm = ({
 
   return (
     <div className="flex flex-col gap-3 py-5 first:pt-0 last:pb-1">
-      <p className="font-medium my-0 break-words">
+      <p className="my-0 break-words font-mono text-sm font-semibold text-white">
         {abiFunction.name}
         <InheritanceTooltip inheritedFrom={inheritedFrom} />
       </p>
@@ -79,14 +79,14 @@ export const ReadOnlyFunctionForm = ({
       <div className="flex flex-col md:flex-row justify-between gap-2 flex-wrap">
         <div className="grow w-full md:max-w-[80%]">
           {result !== null && result !== undefined && (
-            <div className="bg-secondary rounded-3xl text-sm px-4 py-1.5 break-words overflow-auto">
-              <p className="font-bold m-0 mb-1">Result:</p>
+            <div className="overflow-auto break-words rounded-md border border-sky-300/20 bg-sky-400/[0.08] px-3 py-2 font-mono text-xs text-sky-100">
+              <p className="mb-1 mt-0 font-sans font-semibold">Result</p>
               <pre className="whitespace-pre-wrap break-words">{displayTxResult(result, "sm")}</pre>
             </div>
           )}
         </div>
         <button
-          className="btn btn-secondary btn-sm self-end md:self-start"
+          className="self-end rounded-md border border-sky-300/35 bg-sky-400/10 px-3 py-2 text-sm font-semibold text-sky-100 transition-colors hover:bg-sky-400/20 disabled:cursor-wait disabled:opacity-60 md:self-start"
           onClick={async () => {
             const { data } = await refetch();
             setResult(data);
@@ -94,7 +94,7 @@ export const ReadOnlyFunctionForm = ({
           disabled={isFetching}
         >
           {isFetching && <span className="loading loading-spinner loading-xs"></span>}
-          Read 📡
+          Query state
         </button>
       </div>
     </div>

@@ -95,7 +95,7 @@ export const WriteOnlyFunctionForm = ({
   return (
     <div className="py-5 space-y-3 first:pt-0 last:pb-1">
       <div className={`flex gap-3 ${zeroInputs ? "flex-row justify-between items-center" : "flex-col"}`}>
-        <p className="font-medium my-0 break-words">
+        <p className="my-0 break-words font-mono text-sm font-semibold text-white">
           {abiFunction.name}
           <InheritanceTooltip inheritedFrom={inheritedFrom} />
         </p>
@@ -127,9 +127,13 @@ export const WriteOnlyFunctionForm = ({
             }`}
             data-tip={`${writeDisabled && "Wallet not connected or in the wrong network"}`}
           >
-            <button className="btn btn-secondary btn-sm" disabled={writeDisabled || isPending} onClick={handleWrite}>
+            <button
+              className="rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white transition-colors hover:bg-violet-400 disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={writeDisabled || isPending}
+              onClick={handleWrite}
+            >
               {isPending && <span className="loading loading-spinner loading-xs"></span>}
-              Send 💸
+              Submit transaction
             </button>
           </div>
         </div>
