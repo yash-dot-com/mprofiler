@@ -141,6 +141,64 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <section className="border-t border-slate-200 bg-[#f8fafc] px-5 py-20 sm:px-8 lg:px-12 lg:py-28">
+        <div className="mx-auto grid max-w-[1200px] gap-10 lg:grid-cols-[0.88fr_1.12fr] lg:items-center">
+          <div>
+            <p className="m-0 text-sm font-semibold text-blue-700">Monad, used carefully</p>
+            <h2 className="mb-0 mt-3 text-4xl font-semibold leading-[0.98] tracking-[-0.065em] text-slate-950 sm:text-5xl">
+              From a local trace to a verifiable Monad record.
+            </h2>
+            <p className="mb-0 mt-5 max-w-lg text-sm leading-6 text-slate-600">
+              Profiling stays local and reproducible. Monad is where a developer proves who published a specific profile report and where anyone can verify its evidence fingerprint.
+            </p>
+            <div className="mt-7 space-y-3">
+              {[
+                ["01", "Local evidence", "Compile in an isolated EVM and capture receipt gas plus normalized storage accesses."],
+                ["02", "Monad Testnet", "Validate wallet deployment, submitted transactions, receipts, events, and available QuickNode traces."],
+                ["03", "Monad Mainnet", "Publish a report hash through the attestation registry after the Testnet journey is proven."],
+              ].map(([number, title, body]) => (
+                <div key={number} className="flex gap-4 rounded-xl border border-slate-200 bg-white p-4">
+                  <span className="font-mono text-xs font-semibold text-blue-700">{number}</span>
+                  <div>
+                    <p className="m-0 text-sm font-semibold text-slate-950">{title}</p>
+                    <p className="mb-0 mt-1 text-xs leading-5 text-slate-500">{body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-[0_24px_70px_rgba(15,23,42,0.1)] sm:p-7">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <p className="m-0 text-sm font-semibold text-slate-950">Verifiable profile record</p>
+                <p className="mb-0 mt-1 text-xs text-slate-400">The Mainnet attestation is deliberately small and public.</p>
+              </div>
+              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-amber-700">Mainnet path</span>
+            </div>
+            <div className="mt-5 space-y-3">
+              {[
+                ["Profile report", "source hash · compiler version · workload manifest · trace summary"],
+                ["Keccak-256 fingerprint", "one deterministic hash for the complete canonical report"],
+                ["Monad attestation", "publisher address · timestamp · optional evidence URI"],
+                ["Public verification", "recompute the hash, read the event, and compare the record"],
+              ].map(([label, body], index) => (
+                <div key={label} className="flex items-start gap-3">
+                  <span className="mt-0.5 grid h-6 w-6 shrink-0 place-items-center rounded-full bg-blue-50 text-[10px] font-semibold text-blue-700">{index + 1}</span>
+                  <div>
+                    <p className="m-0 text-sm font-semibold text-slate-800">{label}</p>
+                    <p className="mb-0 mt-0.5 text-xs leading-5 text-slate-500">{body}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="mt-6 rounded-xl bg-slate-950 px-4 py-3 font-mono text-[11px] leading-5 text-slate-300">
+              report.json → keccak256(report) → ProfileAttested(reportHash, publisher, timestamp, evidenceUri)
+            </div>
+          </div>
+        </div>
+      </section>
+
       <section id="evidence" className="border-t border-slate-200 bg-[#111113] px-5 py-16 text-center sm:px-8 lg:py-20">
         <p className="m-0 text-sm font-semibold text-blue-300">Evidence stays honest</p>
         <h2 className="mx-auto mb-0 mt-3 max-w-3xl text-3xl font-semibold tracking-[-0.055em] text-white sm:text-5xl">Measure locally. Derive carefully. Verify publicly.</h2>

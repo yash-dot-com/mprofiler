@@ -50,6 +50,33 @@ flowchart LR
 
 The browser never receives the Render worker token. The wallet signs Testnet transactions directly; no wallet private key is sent to Vercel or Render.
 
+## Monad integration and the verifiable-report path
+
+MProfiler uses Monad in three deliberately separate layers:
+
+| Layer | What MProfiler does | What it proves |
+| --- | --- | --- |
+| Local profiler | Compiles and executes a controlled workload in an isolated Hardhat EVM, then records receipt gas and normalized storage accesses. | Reproducible local execution evidence. It does not prove Monad scheduler behavior or Mainnet performance. |
+| Monad Testnet | Uses a wallet and a bounded QuickNode check to validate deployment, transaction submission, receipts, events, and available traces. | The integration works against a real Monad network endpoint. |
+| Monad Mainnet | The release path is a small public attestation registry on Monad Mainnet (chain ID `143`) for a completed report hash. | A wallet address published one exact evidence fingerprint at a known time. It does not put a full profiler report or arbitrary source code on-chain. |
+
+### What makes a report verifiable
+
+The report remains off-chain, where it can retain the source hash, compiler version, exact workload manifest, receipt summaries, normalized access evidence, and derived graph properties. MProfiler canonicalizes that complete report and computes its Keccak-256 hash. The attestation contract records:
+
+- `reportHash`
+- publisher address
+- publication timestamp
+- optional evidence URI
+
+Anyone can fetch the evidence URI, recompute the hash, read the `ProfileAttested` event, and compare it to the on-chain record. This creates a public proof of **which exact report was published**, without pretending that a hash proves a performance claim by itself.
+
+The current wallet UI and Testnet checkpoint are the integration step. The Mainnet release is the next controlled deployment after the registry and public verifier have completed this same journey on Testnet. Monad Mainnet uses chain ID `143`, MON for gas, and MonadVision/MonadScan explorers; verify current network settings against the [Monad developer resources](https://github.com/monad-developers) before configuring a wallet or release.
+
+### Why storage evidence matters on Monad
+
+MProfiler is EVM-compatible and begins with evidence any Solidity developer can reproduce: gas receipts and `SLOAD`/`SSTORE` accesses. That evidence gives developers a concrete way to inspect repeated state reads and shared writes before they adopt a revision. [MIP-8: Page-ified Storage State](https://github.com/monad-crypto/MIPs/blob/main/MIPs/MIP-8.md) makes storage locality especially relevant to Monad's direction. MProfiler does **not** yet calculate MIP-8 page costs; page-aware cost modeling is a planned extension that will be separately labeled and validated.
+
 ## Requirements
 
 - Node.js `>= 20.18.3`
