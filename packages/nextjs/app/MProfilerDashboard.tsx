@@ -91,6 +91,7 @@ type ProfileReport = {
     note: string;
   } | null;
 };
+type QuickNodeCheck = { state: "idle" | "checking" | "connected" | "wrong-network" | "failed"; detail: string };
 
 const insightSourceStorageKey = "mprofiler.insights.source";
 
@@ -237,6 +238,11 @@ const MProfilerDashboard = () => {
   const [constructorArgs, setConstructorArgs] = useState("[]");
   const [callManifest, setCallManifest] = useState("[]");
   const [manifestHint, setManifestHint] = useState("Upload or paste source, then generate a starter call.");
+  const [quickNodeUrl, setQuickNodeUrl] = useState("");
+  const [quickNodeCheck, setQuickNodeCheck] = useState<QuickNodeCheck>({
+    state: "idle",
+    detail: "Paste a Monad Testnet QuickNode URL to run a browser-only chain identity check.",
+  });
 
   useEffect(() => {
     const saved = loadStoredProfileResult();
@@ -449,6 +455,39 @@ const MProfilerDashboard = () => {
     }
   };
 
+  const checkQuickNode = async () => {
+    const endpoint = quickNodeUrl.trim();
+    if (!endpoint) {
+      setQuickNodeCheck({ state: "failed", detail: "Paste your QuickNode Monad Testnet URL first." });
+      return;
+    }
+    try {
+      const url = new URL(endpoint);
+      if (url.protocol !== "https:") throw new Error("Use an HTTPS QuickNode endpoint.");
+      setQuickNodeCheck({ state: "checking", detail: "Checking eth_chainId directly from this browser…" });
+      const response = await fetch(url, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as { result?: unknown };
+      if (!response.ok || typeof payload.result !== "string") throw new Error("The endpoint did not return an eth_chainId result.");
+      if (payload.result !== "0x279f") {
+        setQuickNodeCheck({
+          state: "wrong-network",
+          detail: `Connected, but this endpoint returned ${payload.result}. Monad Testnet should return 0x279f (10143).`,
+        });
+        return;
+      }
+      setQuickNodeCheck({ state: "connected", detail: "Monad Testnet confirmed: chain ID 10143 (0x279f)." });
+    } catch (requestError) {
+      setQuickNodeCheck({
+        state: "failed",
+        detail: requestError instanceof Error ? requestError.message : "Could not check that RPC endpoint.",
+      });
+    }
+  };
+
   const clearSavedResult = () => {
     clearStoredProfileResult();
     setJob(null);
@@ -543,6 +582,64 @@ const MProfilerDashboard = () => {
               Profile one Solidity contract, inspect trace-backed storage evidence, then send an evidence-bound handoff
               to your coding agent.
             </p>
+          </div>
+        </section>
+
+        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 text-white shadow-xl shadow-slate-300/40">
+          <div className="grid gap-6 px-5 py-6 sm:px-7 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+            <div>
+              <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-300">
+                Monad Testnet lane
+              </p>
+              <h2 className="mb-0 mt-2 text-xl font-semibold tracking-[-0.04em] text-white">
+                Bring your QuickNode endpoint.
+              </h2>
+              <p className="mb-0 mt-2 max-w-md text-sm leading-6 text-slate-400">
+                Check that an RPC URL points at Monad Testnet before using it for the bounded deployment and receipt-verification checkpoint.
+              </p>
+              <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-medium">
+                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">Browser-only check</span>
+                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">Expected: 10143</span>
+                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">Never stored</span>
+              </div>
+            </div>
+            <div className="rounded-xl border border-white/10 bg-white/[0.05] p-4">
+              <label className="block text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
+                QuickNode Monad Testnet RPC
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    aria-label="QuickNode Monad Testnet RPC URL"
+                    type="url"
+                    value={quickNodeUrl}
+                    onChange={event => setQuickNodeUrl(event.target.value)}
+                    placeholder="https://…monad-testnet.quiknode.pro/…/"
+                    className="h-11 min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 font-mono text-xs normal-case tracking-normal text-white outline-none placeholder:text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={checkQuickNode}
+                    disabled={quickNodeCheck.state === "checking"}
+                    className="h-11 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-slate-950 transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {quickNodeCheck.state === "checking" ? "Checking…" : "Test RPC"}
+                  </button>
+                </div>
+              </label>
+              <div
+                className={`mt-3 rounded-lg px-3 py-2 text-xs leading-5 ${
+                  quickNodeCheck.state === "connected"
+                    ? "bg-emerald-400/10 text-emerald-200"
+                    : quickNodeCheck.state === "wrong-network" || quickNodeCheck.state === "failed"
+                      ? "bg-rose-400/10 text-rose-200"
+                      : "bg-white/[0.04] text-slate-400"
+                }`}
+              >
+                {quickNodeCheck.detail}
+              </div>
+              <p className="mb-0 mt-3 text-[11px] leading-5 text-slate-500">
+                This only calls <code>eth_chainId</code> from your browser. The URL is not saved, uploaded, or sent to the profiler worker.
+              </p>
+            </div>
           </div>
         </section>
 

@@ -1,5 +1,6 @@
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
 import { CurrencyDollarIcon, MagnifyingGlassIcon } from "@heroicons/react/24/outline";
 import { HeartIcon } from "@heroicons/react/24/outline";
@@ -16,6 +17,8 @@ export const Footer = () => {
   const nativeCurrencyPrice = useGlobalState(state => state.nativeCurrency.price);
   const { targetNetwork } = useTargetNetwork();
   const isLocalNetwork = targetNetwork.id === hardhat.id;
+  const pathname = usePathname();
+  const isMProfilerRoute = ["/", "/profile", "/compare", "/insights", "/debug"].includes(pathname);
 
   return (
     <div className="min-h-0 py-5 px-1 mb-11 lg:mb-0">
@@ -30,7 +33,7 @@ export const Footer = () => {
                 </div>
               </div>
             )}
-            {isLocalNetwork && (
+            {isLocalNetwork && !isMProfilerRoute && (
               <>
                 <Faucet />
                 <Link href="/blockexplorer" passHref className="btn btn-primary btn-sm font-normal gap-1">
