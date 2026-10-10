@@ -37,16 +37,16 @@ export function TestnetDeploymentCard() {
   };
 
   return (
-    <section className="mt-5 rounded-xl border border-emerald-300/20 bg-emerald-400/[0.055] p-4">
+    <section className="mt-5 rounded-xl border border-teal-200 bg-teal-50 p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
-          <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-200">
-            Monad Testnet evidence
+          <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.15em] text-teal-700">
+            Step 4 · Testnet verification
           </p>
-          <h2 className="mb-0 mt-2 text-base font-semibold text-white">
+          <h2 className="mb-0 mt-2 text-base font-semibold text-slate-950">
             Deploy the public workload fixture from your wallet
           </h2>
-          <p className="mb-0 mt-2 max-w-3xl text-sm leading-6 text-[#b9cabc]">
+          <p className="mb-0 mt-2 max-w-3xl text-sm leading-6 text-slate-600">
             Your wallet signs the deployment. The dashboard records the transaction and receipt; the local profiler
             remains a separate deterministic Hardhat measurement.
           </p>
@@ -57,7 +57,7 @@ export function TestnetDeploymentCard() {
               <button
                 type="button"
                 onClick={openConnectModal}
-                className="rounded-md bg-emerald-400 px-3 py-2 text-sm font-semibold text-[#052d22] hover:bg-emerald-300"
+                className="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800"
               >
                 Connect wallet
               </button>
@@ -68,7 +68,7 @@ export function TestnetDeploymentCard() {
             type="button"
             onClick={deploy}
             disabled={isSwitching || isSubmitting || isConfirming}
-            className="rounded-md bg-emerald-400 px-3 py-2 text-sm font-semibold text-[#052d22] hover:bg-emerald-300 disabled:cursor-wait disabled:opacity-60"
+            className="rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 disabled:cursor-wait disabled:opacity-60"
           >
             {isSwitching
               ? "Switching network…"
@@ -81,16 +81,16 @@ export function TestnetDeploymentCard() {
         )}
       </div>
       {isConnected && (
-        <p className="mb-0 mt-3 font-mono text-xs text-emerald-100">
+        <p className="mb-0 mt-3 font-mono text-xs text-teal-800">
           Wallet: {address ? shortHash(address) : "connected"} ·{" "}
           {chainId === monadTestnet.id ? "Monad Testnet" : "network switch required"}
         </p>
       )}
       {deploymentHash && (
-        <p className="mb-0 mt-3 text-sm text-[#d6eadc]">
+        <p className="mb-0 mt-3 text-sm text-slate-700">
           Submitted:{" "}
           <a
-            className="font-mono text-emerald-200 underline underline-offset-4"
+            className="font-mono text-teal-700 underline underline-offset-4"
             href={`${explorerUrl}/tx/${deploymentHash}`}
             target="_blank"
             rel="noreferrer"
@@ -100,10 +100,10 @@ export function TestnetDeploymentCard() {
         </p>
       )}
       {receipt?.contractAddress && (
-        <p className="mb-0 mt-2 text-sm text-[#d6eadc]">
+        <p className="mb-0 mt-2 text-sm text-slate-700">
           Deployed contract:{" "}
           <a
-            className="font-mono text-emerald-200 underline underline-offset-4"
+            className="font-mono text-teal-700 underline underline-offset-4"
             href={`${explorerUrl}/address/${receipt.contractAddress}`}
             target="_blank"
             rel="noreferrer"
@@ -115,7 +115,7 @@ export function TestnetDeploymentCard() {
       {(error || receiptError) && (
         <p
           role="alert"
-          className="mb-0 mt-3 rounded-md border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100"
+          className="mb-0 mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
         >
           {error ?? receiptError?.message}
         </p>

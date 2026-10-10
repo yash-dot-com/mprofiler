@@ -96,37 +96,35 @@ export function AttestationCard({ report }: Props) {
   const busy = isSwitching || isDeploying || isConfirmingDeployment || isAttesting || isConfirmingAttestation;
 
   return (
-    <section className="mt-5 rounded-xl border border-sky-300/20 bg-sky-400/[0.055] p-4">
-      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-200">
-        Public Testnet attestation
-      </p>
-      <h2 className="mb-0 mt-2 text-base font-semibold text-white">Publish this report hash from your wallet</h2>
-      <p className="mb-0 mt-2 max-w-3xl text-sm leading-6 text-[#b9cabc]">
+    <section className="mt-5 rounded-xl border border-sky-200 bg-sky-50 p-5 shadow-sm">
+      <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-700">Publish evidence</p>
+      <h2 className="mb-0 mt-2 text-base font-semibold text-slate-950">Publish this report hash from your wallet</h2>
+      <p className="mb-0 mt-2 max-w-3xl text-sm leading-6 text-slate-600">
         The chain stores the Keccak-256 hash, publisher, timestamp, and optional evidence URI. Local measurements stay
         off-chain and can be verified against this exact hash.
       </p>
-      <p className="mb-0 mt-3 break-all rounded-md border border-sky-200/15 bg-black/20 px-3 py-2 font-mono text-xs text-sky-100">
+      <p className="mb-0 mt-3 break-all rounded-md border border-sky-200 bg-white px-3 py-2 font-mono text-xs text-sky-800">
         Report hash: {reportHash}
       </p>
 
       <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto]">
-        <label className="text-xs text-[#a8a8be]">
+        <label className="text-xs text-slate-600">
           Attestation contract address
           <input
             value={contractAddress}
             onChange={event => setContractAddress(event.target.value.trim())}
             placeholder="Deploy below or paste an existing Testnet address"
-            className="mt-1 block w-full rounded-md border border-white/15 bg-black/25 px-3 py-2 font-mono text-xs text-white outline-none focus:border-sky-300"
+            className="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 outline-none focus:border-sky-500"
           />
         </label>
-        <label className="text-xs text-[#a8a8be]">
+        <label className="text-xs text-slate-600">
           Evidence URI (optional)
           <input
             value={reportUri}
             onChange={event => setReportUri(event.target.value)}
             maxLength={512}
             placeholder="ipfs://… or a public report URL"
-            className="mt-1 block w-full rounded-md border border-white/15 bg-black/25 px-3 py-2 font-mono text-xs text-white outline-none focus:border-sky-300"
+            className="mt-1 block w-full rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 outline-none focus:border-sky-500"
           />
         </label>
         <div className="flex items-end gap-2">
@@ -134,7 +132,7 @@ export function AttestationCard({ report }: Props) {
             type="button"
             onClick={deploy}
             disabled={busy}
-            className="rounded-md border border-sky-300/40 px-3 py-2 text-sm font-semibold text-sky-100 hover:bg-sky-300/10 disabled:cursor-wait disabled:opacity-60"
+            className="rounded-md border border-sky-300 bg-white px-3 py-2 text-sm font-semibold text-sky-700 hover:bg-sky-100 disabled:cursor-wait disabled:opacity-60"
           >
             Deploy registry
           </button>
@@ -142,7 +140,7 @@ export function AttestationCard({ report }: Props) {
             type="button"
             onClick={attest}
             disabled={busy || !isAddress(contractAddress)}
-            className="rounded-md bg-sky-300 px-3 py-2 text-sm font-semibold text-[#06233a] hover:bg-sky-200 disabled:cursor-wait disabled:opacity-60"
+            className="rounded-md bg-sky-700 px-3 py-2 text-sm font-semibold text-white hover:bg-sky-800 disabled:cursor-wait disabled:opacity-60"
           >
             {isSwitching
               ? "Switching…"
@@ -158,16 +156,16 @@ export function AttestationCard({ report }: Props) {
           </button>
         </div>
       </div>
-      <p className="mb-0 mt-3 text-xs text-[#a8a8be]">
+      <p className="mb-0 mt-3 text-xs text-slate-600">
         {isConnected
           ? `${shortHash(address ?? "wallet")} · ${onTestnet ? "Monad Testnet" : "network switch required"}`
           : "Connect a Testnet wallet using the deployment card above."}
       </p>
       {deploymentHash && (
-        <p className="mb-0 mt-2 text-sm text-sky-100">
+        <p className="mb-0 mt-2 text-sm text-slate-700">
           Registry transaction:{" "}
           <a
-            className="font-mono text-sky-200 underline underline-offset-4"
+            className="font-mono text-sky-700 underline underline-offset-4"
             href={`${explorerUrl}/tx/${deploymentHash}`}
             target="_blank"
             rel="noreferrer"
@@ -177,10 +175,10 @@ export function AttestationCard({ report }: Props) {
         </p>
       )}
       {attestationHash && (
-        <p className="mb-0 mt-2 text-sm text-sky-100">
+        <p className="mb-0 mt-2 text-sm text-slate-700">
           Attestation transaction:{" "}
           <a
-            className="font-mono text-sky-200 underline underline-offset-4"
+            className="font-mono text-sky-700 underline underline-offset-4"
             href={`${explorerUrl}/tx/${attestationHash}`}
             target="_blank"
             rel="noreferrer"
@@ -190,7 +188,7 @@ export function AttestationCard({ report }: Props) {
         </p>
       )}
       {emittedExpectedEvent && (
-        <p className="mb-0 mt-2 rounded-md border border-emerald-300/25 bg-emerald-400/10 px-3 py-2 text-sm text-emerald-100">
+        <p className="mb-0 mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
           Verified from the receipt: the registry emitted <span className="font-mono">ProfileAttested</span> for this
           exact report hash.
         </p>
@@ -198,7 +196,7 @@ export function AttestationCard({ report }: Props) {
       {(error || deploymentError || attestationError) && (
         <p
           role="alert"
-          className="mb-0 mt-3 rounded-md border border-rose-300/30 bg-rose-500/10 px-3 py-2 text-sm text-rose-100"
+          className="mb-0 mt-3 rounded-md border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-800"
         >
           {error ?? deploymentError?.message ?? attestationError?.message}
         </p>

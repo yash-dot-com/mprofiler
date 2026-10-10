@@ -104,6 +104,21 @@
   background: var(--color-base-200);
 }
 
+@keyframes mprofiler-page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mprofiler-page {
+  animation: mprofiler-page-enter 180ms ease-out both;
+}
+
 .btn {
   @apply shadow-md;
 }

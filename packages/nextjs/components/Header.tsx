@@ -6,6 +6,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { hardhat } from "viem/chains";
 import { Bars3Icon, BugAntIcon } from "@heroicons/react/24/outline";
+import { FlowNavigation } from "~~/components/mprofiler/FlowNavigation";
 import { FaucetButton, RainbowKitCustomConnectButton } from "~~/components/scaffold-eth";
 import { useOutsideClick, useTargetNetwork } from "~~/hooks/scaffold-eth";
 
@@ -70,57 +71,32 @@ export const Header = () => {
 
   return (
     <div
-      className={`${isProfilerPage ? "border-b border-white/10 bg-[#07070c]" : "sticky top-0 z-20 navbar min-h-0 shrink-0 justify-between bg-base-100 px-0 shadow-md shadow-secondary sm:px-2 lg:static"}`}
+      className={`${isProfilerPage ? "border-b border-slate-200 bg-white" : "sticky top-0 z-20 navbar min-h-0 shrink-0 justify-between bg-base-100 px-0 shadow-md shadow-secondary sm:px-2 lg:static"}`}
     >
       {isProfilerPage ? (
-        <div className="mx-auto flex min-h-[62px] w-full max-w-[1440px] items-center justify-between px-5 sm:px-8 lg:px-12">
+        <div className="mx-auto flex min-h-[68px] w-full max-w-[1440px] items-center justify-between gap-5 px-5 sm:px-8 lg:px-12">
           <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-[-0.04em] text-white">
+            <Link href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-[-0.04em] text-slate-950">
               <span
                 aria-hidden="true"
-                className="grid h-8 w-8 place-items-center rounded-md bg-[#315cf5] text-sm font-bold text-white"
+                className="grid h-8 w-8 place-items-center rounded-md bg-blue-700 text-sm font-bold text-white shadow-sm"
               >
                 M
               </span>
               MProfiler
             </Link>
-            <span className="hidden h-7 border-l border-white/10 sm:block" />
-            <span className="hidden items-center gap-2 text-sm text-[#aaa9bb] sm:flex">
-              <i className="h-2 w-2 rounded-full bg-emerald-500" />
-              Local EVM
+            <span className="hidden h-7 border-l border-slate-200 sm:block" />
+            <span className="hidden items-center gap-2 text-sm text-slate-500 lg:flex">
+              <i className="h-2 w-2 rounded-full bg-teal-500" />
+              Local workspace
             </span>
           </div>
-          <nav aria-label="Main navigation" className="flex items-center gap-5 text-sm">
-            <Link
-              href="/"
-              aria-current={pathname === "/" ? "page" : undefined}
-              className={`py-[22px] font-semibold transition-colors ${pathname === "/" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
-            >
-              Profiler
+          {pathname !== "/debug" && <FlowNavigation />}
+          {pathname === "/debug" && (
+            <Link href="/" className="text-sm font-semibold text-blue-700 hover:text-blue-800">
+              Back to workspace
             </Link>
-            <Link
-              href="/compare"
-              aria-current={pathname === "/compare" ? "page" : undefined}
-              className={`py-[22px] font-semibold transition-colors ${pathname === "/compare" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
-            >
-              Compare
-            </Link>
-            <Link
-              href="/insights"
-              aria-current={pathname === "/insights" ? "page" : undefined}
-              className={`py-[22px] font-semibold transition-colors ${pathname === "/insights" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
-            >
-              Insights
-            </Link>
-            <Link
-              href="/debug"
-              prefetch={false}
-              aria-current={pathname === "/debug" ? "page" : undefined}
-              className={`py-[22px] font-semibold transition-colors ${pathname === "/debug" ? "border-b-2 border-violet-400 text-violet-200" : "text-[#aaa9bb] hover:text-white"}`}
-            >
-              Contracts
-            </Link>
-          </nav>
+          )}
         </div>
       ) : (
         <>

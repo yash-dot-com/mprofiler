@@ -9,7 +9,7 @@ import {
   type ProfilingEvidence,
   createCodingAgentHandoff,
 } from "~~/lib/mprofiler/insights";
-import { loadStoredProfileResult } from "~~/lib/mprofiler/profileStorage";
+import { loadStoredInsightDraft, loadStoredProfileResult, saveInsightDraft } from "~~/lib/mprofiler/profileStorage";
 
 const fixtureSource = `// SPDX-License-Identifier: MIT
 pragma solidity 0.8.20;
@@ -89,10 +89,18 @@ export default function InsightsDashboard() {
 
   useEffect(() => {
     const attachedSource = window.sessionStorage.getItem(insightSourceStorageKey);
-    if (!attachedSource) return;
-    setSource(attachedSource);
-    setReport(null);
-    window.sessionStorage.removeItem(insightSourceStorageKey);
+    if (attachedSource) {
+      setSource(attachedSource);
+      setReport(null);
+      saveInsightDraft(attachedSource, null);
+      window.sessionStorage.removeItem(insightSourceStorageKey);
+      return;
+    }
+    const draft = loadStoredInsightDraft();
+    if (draft) {
+      setSource(draft.source);
+      setReport(draft.report as ContractInsightsReport | null);
+    }
   }, []);
 
   useEffect(() => {
@@ -134,6 +142,7 @@ export default function InsightsDashboard() {
         }),
       );
       setReport(nextReport);
+      saveInsightDraft(source, nextReport);
     } catch (requestError) {
       setError(requestError instanceof Error ? requestError.message : "Could not analyze this source.");
     } finally {
@@ -158,22 +167,24 @@ export default function InsightsDashboard() {
       setError("Solidity source files must be 64 KB or smaller for this diagnostic pass.");
       return;
     }
-    setSource(await file.text());
+    const nextSource = await file.text();
+    setSource(nextSource);
     setReport(null);
+    saveInsightDraft(nextSource, null);
   };
 
   return (
-    <div className="min-h-full bg-[#07070c] text-[#f6f4ff]">
+    <div className="mprofiler-page min-h-full bg-[#f6f8fb] text-slate-900">
       <main className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-6">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
           <div>
-            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-200">
+            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-700">
               MProfiler · contract insights
             </p>
-            <h1 className="mb-0 mt-2 text-3xl font-semibold tracking-[-0.05em] text-white">
+            <h1 className="mb-0 mt-2 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
               Compiler-style performance diagnostics
             </h1>
-            <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-[#a7a5b6]">
+            <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-slate-600">
               Attach source from the completed profile or upload it here. Deterministic source checks are combined with
               available profile evidence; inferences and recommendations stay separate from observed measurements.
             </p>
@@ -182,13 +193,13 @@ export default function InsightsDashboard() {
             <div className="flex flex-wrap gap-2">
               <Link
                 href="/"
-                className="rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-[#d8d6e1] hover:bg-white/5"
+                className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
               >
                 Back to profiler
               </Link>
               <Link
                 href={`/compare?job=${jobId}`}
-                className="rounded-md border border-violet-300/30 px-3 py-2 text-sm font-semibold text-violet-100 hover:bg-violet-400/[0.1]"
+                className="rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
               >
                 Review comparison
               </Link>
@@ -205,19 +216,19 @@ export default function InsightsDashboard() {
           </p>
         )}
         {evidenceRestoredFromBrowser && (
-          <p className="mt-4 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm text-sky-100">
+          <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
             Profiling evidence was restored from this browser&apos;s saved completed report.
           </p>
         )}
         <section className="mt-5 grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
-          <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+          <Card className="border border-slate-200 !bg-white !p-0 !text-slate-950 shadow-sm">
             <CardContent className="!p-5">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="m-0 font-mono text-[11px] uppercase tracking-[0.15em] text-violet-300">Source input</p>
+                  <p className="m-0 font-mono text-[11px] uppercase tracking-[0.15em] text-blue-700">Source input</p>
                   <h2 className="mb-0 mt-2 text-lg font-semibold">Solidity contract</h2>
                 </div>
-                <label className="cursor-pointer rounded-md border border-white/15 px-3 py-2 text-xs font-semibold text-[#d8d6e1] hover:bg-white/5">
+                <label className="cursor-pointer rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
                   Upload .sol
                   <input className="sr-only" type="file" accept=".sol,text/plain" onChange={loadFile} />
                 </label>
@@ -228,12 +239,13 @@ export default function InsightsDashboard() {
                 onChange={event => {
                   setSource(event.target.value);
                   setReport(null);
+                  saveInsightDraft(event.target.value, null);
                 }}
                 spellCheck={false}
-                className="mt-5 h-[560px] w-full resize-y rounded-md border border-white/10 bg-black/30 p-4 font-mono text-xs leading-6 text-[#d8d6e1] outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-500/25"
+                className="mt-5 h-[560px] w-full resize-y rounded-md border border-slate-200 bg-slate-50 p-4 font-mono text-xs leading-6 text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               />
               <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-                <p className="m-0 text-xs text-[#858497]">
+                <p className="m-0 text-xs text-slate-500">
                   {source.split("\n").length} lines ·{" "}
                   {reportLoaded ? "profile evidence attached when available" : "loading profile evidence…"}
                 </p>
@@ -241,7 +253,7 @@ export default function InsightsDashboard() {
                   type="button"
                   onClick={runAnalysis}
                   disabled={isAnalyzing || !reportLoaded}
-                  className="rounded-md bg-violet-500 px-4 py-2 text-sm font-semibold text-white hover:bg-violet-400 disabled:cursor-wait disabled:opacity-60"
+                  className="rounded-md bg-blue-700 px-4 py-2 text-sm font-semibold text-white hover:bg-blue-800 disabled:cursor-wait disabled:opacity-60"
                 >
                   {isAnalyzing ? "Analyzing…" : "Generate diagnostics"}
                 </button>
@@ -249,14 +261,14 @@ export default function InsightsDashboard() {
             </CardContent>
           </Card>
 
-          <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+          <Card className="border border-slate-200 !bg-white !p-0 !text-slate-950 shadow-sm">
             <CardContent className="!p-5">
-              <p className="m-0 font-mono text-[11px] uppercase tracking-[0.15em] text-emerald-200">
+              <p className="m-0 font-mono text-[11px] uppercase tracking-[0.15em] text-emerald-700">
                 Diagnostic report
               </p>
               <h2 className="mb-0 mt-2 text-lg font-semibold">Evidence and recommendations</h2>
               {!report && (
-                <p className="mb-0 mt-5 rounded-lg border border-dashed border-white/15 bg-white/[0.025] px-4 py-6 text-sm leading-6 text-[#aaa9bb]">
+                <p className="mb-0 mt-5 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-4 py-6 text-sm leading-6 text-slate-600">
                   Run diagnostics to receive location-aware findings. This view does not claim compiler output or AI
                   measurements that were not produced.
                 </p>
@@ -264,48 +276,48 @@ export default function InsightsDashboard() {
               {error && (
                 <p
                   role="alert"
-                  className="mb-0 mt-5 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100"
+                  className="mb-0 mt-5 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-800"
                 >
                   {error}
                 </p>
               )}
               {report && (
                 <>
-                  <div className="mt-5 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-3 py-3 text-xs leading-5 text-sky-100">
+                  <div className="mt-5 rounded-lg border border-sky-200 bg-sky-50 px-3 py-3 text-xs leading-5 text-sky-800">
                     <strong>Analysis mode: deterministic.</strong> {report.compiler.note}
                   </div>
                   <div className="mt-4 space-y-3">
                     {report.diagnostics.length === 0 ? (
-                      <p className="m-0 rounded-md border border-white/10 px-3 py-3 text-sm text-[#b9b7c5]">
+                      <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-3 text-sm text-slate-600">
                         No supported performance pattern was detected. This is not proof that the contract has no
                         performance issues.
                       </p>
                     ) : (
                       report.diagnostics.map(diagnostic => (
-                        <article key={diagnostic.code} className="rounded-lg border border-white/10 bg-black/20 p-4">
+                        <article key={diagnostic.code} className="rounded-lg border border-slate-200 bg-slate-50 p-4">
                           <div className="flex items-center justify-between gap-3">
-                            <code className="font-semibold text-violet-200">{diagnostic.code}</code>
+                            <code className="font-semibold text-blue-700">{diagnostic.code}</code>
                             <span
                               className={
                                 diagnostic.severity === "warning"
-                                  ? "rounded-full bg-amber-400/15 px-2 py-1 text-xs text-amber-100"
-                                  : "rounded-full bg-sky-400/15 px-2 py-1 text-xs text-sky-100"
+                                  ? "rounded-full bg-amber-100 px-2 py-1 text-xs text-amber-800"
+                                  : "rounded-full bg-sky-400/15 px-2 py-1 text-xs text-sky-800"
                               }
                             >
                               {diagnostic.severity}
                             </span>
                           </div>
-                          <h3 className="mt-3 text-base font-semibold text-white">{diagnostic.title}</h3>
-                          <p className="m-0 mt-2 font-mono text-xs text-pink-200">
+                          <h3 className="mt-3 text-base font-semibold text-slate-950">{diagnostic.title}</h3>
+                          <p className="m-0 mt-2 font-mono text-xs text-slate-500">
                             line {diagnostic.location.line}, columns {diagnostic.location.column}-
                             {diagnostic.location.endColumn}
                           </p>
-                          <p className="mb-0 mt-3 text-sm leading-6 text-[#c3c1cc]">{diagnostic.inference}</p>
-                          <p className="mb-0 mt-3 text-sm leading-6 text-emerald-100">
+                          <p className="mb-0 mt-3 text-sm leading-6 text-slate-700">{diagnostic.inference}</p>
+                          <p className="mb-0 mt-3 text-sm leading-6 text-emerald-800">
                             <strong>Suggested action:</strong> {diagnostic.recommendation}
                           </p>
                           {diagnostic.observedEvidence.length > 0 && (
-                            <ul className="mb-0 mt-3 list-disc space-y-1 pl-5 text-xs leading-5 text-[#a7a5b6]">
+                            <ul className="mb-0 mt-3 list-disc space-y-1 pl-5 text-xs leading-5 text-slate-600">
                               {diagnostic.observedEvidence.map(item => (
                                 <li key={item}>{item}</li>
                               ))}

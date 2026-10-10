@@ -14,11 +14,7 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "~~/components/ui/chart";
-import {
-  clearStoredProfileResult,
-  loadStoredProfileResult,
-  saveProfileResult,
-} from "~~/lib/mprofiler/profileStorage";
+import { clearStoredProfileResult, loadStoredProfileResult, saveProfileResult } from "~~/lib/mprofiler/profileStorage";
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "expired";
 type ProfileJob = { id: string; status: JobStatus; createdAt: string; updatedAt: string; error: string | null };
@@ -106,14 +102,14 @@ const shortScenarioLabels: Record<string, string> = {
   "read-heavy": "Read-heavy",
 };
 const gasChartConfig = {
-  baseline: { label: "Baseline", color: "#a855f7" },
-  revision: { label: "Revision", color: "#38bdf8" },
+  baseline: { label: "Baseline", color: "#2563eb" },
+  revision: { label: "Revision", color: "#0f766e" },
 } satisfies ChartConfig;
 const slotChartConfig = {
-  touches: { label: "Observed accesses", color: "#e879f9" },
-  edges: { label: "Derived edges", color: "#60a5fa" },
+  touches: { label: "Observed accesses", color: "#0284c7" },
+  edges: { label: "Derived edges", color: "#0f766e" },
 } satisfies ChartConfig;
-const waveChartConfig = { calls: { label: "Calls", color: "#60a5fa" } } satisfies ChartConfig;
+const waveChartConfig = { calls: { label: "Calls", color: "#2563eb" } } satisfies ChartConfig;
 
 const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 const scenarioName = (id: string) => scenarioLabels[id] ?? id.replaceAll("-", " ");
@@ -149,26 +145,26 @@ function MetricCard({
   label: string;
   value: string;
   detail: string;
-  accent: "violet" | "blue" | "pink" | "green" | "amber";
+  accent: "blue" | "sky" | "teal" | "green" | "amber";
 }) {
   const colors = {
-    violet: "from-violet-500/30 via-violet-500/5 to-transparent text-violet-200",
-    blue: "from-sky-500/30 via-sky-500/5 to-transparent text-sky-200",
-    pink: "from-pink-500/30 via-pink-500/5 to-transparent text-pink-200",
-    green: "from-emerald-500/30 via-emerald-500/5 to-transparent text-emerald-200",
-    amber: "from-amber-400/30 via-amber-400/5 to-transparent text-amber-100",
+    blue: "from-blue-100 via-blue-50 to-transparent text-blue-800",
+    sky: "from-sky-100 via-sky-50 to-transparent text-sky-800",
+    teal: "from-teal-100 via-teal-50 to-transparent text-teal-800",
+    green: "from-emerald-100 via-emerald-50 to-transparent text-emerald-800",
+    amber: "from-amber-100 via-amber-50 to-transparent text-amber-800",
   }[accent];
   const [gradient, textColor] = colors.split(" text-");
   return (
-    <Card className="relative min-h-[132px] overflow-hidden border border-white/10 !bg-[#0e0e17] !p-0 !text-white shadow-[0_16px_45px_rgba(0,0,0,0.2)]">
+    <Card className="relative min-h-[132px] overflow-hidden border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${gradient}`} />
       <CardContent className="relative flex min-h-[132px] flex-col justify-between !p-4">
-        <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-[#a8a8be]">{label}</p>
+        <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">{label}</p>
         <div>
           <p className={`m-0 font-mono text-2xl font-semibold tracking-[-0.06em] sm:text-3xl text-${textColor}`}>
             {value}
           </p>
-          <p className="m-0 mt-1 text-xs leading-5 text-[#9b9bad]">{detail}</p>
+          <p className="m-0 mt-1 text-xs leading-5 text-slate-500">{detail}</p>
         </div>
       </CardContent>
     </Card>
@@ -368,35 +364,26 @@ const MProfilerDashboard = () => {
   };
 
   return (
-    <div className="min-h-full bg-[#07070c] text-[#f6f4ff] selection:bg-violet-500/35">
-      <main className="mx-auto w-full max-w-[1540px] px-4 py-6 sm:px-6 lg:px-8">
-        <section className="flex flex-col gap-5 border-b border-white/10 pb-6 lg:flex-row lg:items-end lg:justify-between">
+    <div className="mprofiler-page min-h-full bg-[#f6f8fb] text-slate-900 selection:bg-blue-100">
+      <main className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
+        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-7 shadow-sm sm:px-8">
           <div>
-            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.19em] text-violet-300">
-              MProfiler · local EVM
+            <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.19em] text-blue-700">
+              MProfiler workspace · local EVM
             </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-white sm:text-4xl">
-              Storage workload profiler
+            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-slate-950 sm:text-4xl">
+              Find storage pressure before deployment.
             </h1>
-            <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-[#a7a5b6] sm:text-base">
-              Deterministic scenario runs with receipt gas, observed storage accesses, and an evidence-derived
-              dependency graph.
+            <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
+              Run deterministic workloads, inspect trace-backed storage evidence, then compare a revision against the
+              same inputs.
             </p>
-          </div>
-          <div className="flex max-w-xl items-start gap-3 rounded-lg border border-violet-400/20 bg-violet-500/[0.07] px-4 py-3 text-sm leading-5 text-violet-100">
-            <span
-              aria-hidden="true"
-              className="mt-1 h-2 w-2 shrink-0 rounded-full bg-violet-300 shadow-[0_0_14px_#c084fc]"
-            />
-            <span>
-              Local measurements and derived graph properties only. Monad scheduler decisions are not measured.
-            </span>
           </div>
         </section>
 
         <section
           aria-label="MProfiler workflow"
-          className="mt-5 grid gap-2 rounded-xl border border-white/10 bg-white/[0.025] p-3 sm:grid-cols-4"
+          className="mt-5 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-4"
         >
           {[
             { step: "01", label: "Profile", detail: "Run deterministic local workloads", active: true },
@@ -406,27 +393,27 @@ const MProfilerDashboard = () => {
           ].map(item => (
             <div
               key={item.step}
-              className={`rounded-lg border px-3 py-2.5 ${item.active ? "border-violet-300/25 bg-violet-400/[0.08]" : "border-white/8 bg-black/15"}`}
+              className={`rounded-lg border px-3 py-2.5 ${item.active ? "border-blue-200 bg-blue-50" : "border-slate-100 bg-slate-50"}`}
             >
               <p
-                className={`m-0 font-mono text-[10px] font-semibold tracking-[0.14em] ${item.active ? "text-violet-200" : "text-[#77768a]"}`}
+                className={`m-0 text-[10px] font-semibold tracking-[0.14em] ${item.active ? "text-blue-700" : "text-slate-400"}`}
               >
                 {item.step} · {item.label}
               </p>
-              <p className="mb-0 mt-1 text-xs text-[#aaa9bb]">{item.detail}</p>
+              <p className="mb-0 mt-1 text-xs text-slate-500">{item.detail}</p>
             </div>
           ))}
         </section>
 
         <form
           onSubmit={handleSubmit}
-          className="mt-5 grid gap-4 rounded-xl border border-white/10 bg-[#0e0e17] p-4 md:grid-cols-[150px_170px_minmax(220px,1fr)_auto] md:items-end"
+          className="mt-5 grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-[150px_170px_minmax(220px,1fr)_auto] md:items-end"
         >
-          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-[#aaa9bb]">
+          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
             Batch size
             <input
               aria-label="Batch size per scenario"
-              className="mt-2 block h-11 w-full rounded-md border border-white/12 bg-[#090910] px-3 font-mono text-base text-white outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/25"
+              className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               type="number"
               min={1}
               max={100}
@@ -436,11 +423,11 @@ const MProfilerDashboard = () => {
               onChange={event => setBatchSize(event.target.value)}
             />
           </label>
-          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-[#aaa9bb]">
+          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
             Controlled accounts
             <input
               aria-label="Controlled account count"
-              className="mt-2 block h-11 w-full rounded-md border border-white/12 bg-[#090910] px-3 font-mono text-base text-white outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-500/25"
+              className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               type="number"
               min={2}
               max={20}
@@ -450,11 +437,11 @@ const MProfilerDashboard = () => {
               onChange={event => setAccountCount(event.target.value)}
             />
           </label>
-          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-[#aaa9bb]">
-            Revision artifact <span className="normal-case tracking-normal text-[#6f6e80]">(optional)</span>
+          <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
+            Revision artifact <span className="normal-case tracking-normal text-slate-400">(optional)</span>
             <input
               aria-label="Revision contract artifact"
-              className="mt-2 block h-11 w-full rounded-md border border-white/12 bg-[#090910] px-3 font-mono text-sm text-white outline-none transition placeholder:text-[#666577] focus:border-violet-400 focus:ring-2 focus:ring-violet-500/25"
+              className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
               type="text"
               maxLength={64}
               placeholder="ProfileWorkloadsRevision"
@@ -463,29 +450,25 @@ const MProfilerDashboard = () => {
             />
           </label>
           <button
-            className="h-11 rounded-md bg-gradient-to-r from-violet-500 to-fuchsia-500 px-6 text-sm font-semibold text-white shadow-[0_8px_24px_rgba(139,92,246,0.28)] transition hover:from-violet-400 hover:to-fuchsia-400 focus:outline-none focus:ring-2 focus:ring-violet-300 focus:ring-offset-2 focus:ring-offset-[#0e0e17] disabled:cursor-wait disabled:opacity-60"
+            className="h-11 rounded-md bg-blue-700 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
             type="submit"
             disabled={isSubmitting || isActive}
           >
             {isSubmitting || isActive ? "Profiling…" : "Run local profile"}
           </button>
         </form>
-        <TestnetDeploymentCard />
-
         {(job || error) && (
           <section
             aria-live="polite"
-            className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-white/10 bg-white/[0.025] px-4 py-3"
+            className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm"
           >
             <div className="flex items-center gap-3 text-sm">
               <span
-                className={`h-2.5 w-2.5 rounded-full ${job?.status === "completed" ? "bg-emerald-400" : error ? "bg-rose-400" : "animate-pulse bg-violet-400"}`}
+                className={`h-2.5 w-2.5 rounded-full ${job?.status === "completed" ? "bg-emerald-500" : error ? "bg-rose-500" : "animate-pulse bg-blue-600"}`}
               />
-              <span className="text-[#aaa9bb]">Status</span>
+              <span className="text-slate-500">Status</span>
               <strong
-                className={
-                  job?.status === "completed" ? "text-emerald-300" : error ? "text-rose-300" : "text-violet-200"
-                }
+                className={job?.status === "completed" ? "text-emerald-700" : error ? "text-rose-700" : "text-blue-700"}
               >
                 {error
                   ? "Needs attention"
@@ -493,11 +476,11 @@ const MProfilerDashboard = () => {
                     ? "Tracing local calls"
                     : (job?.status ?? "Queued")}
               </strong>
-              {job && <code className="hidden text-xs text-[#77768a] sm:inline">{job.id}</code>}
+              {job && <code className="hidden text-xs text-slate-400 sm:inline">{job.id}</code>}
             </div>
             {error && isActive && (
               <button
-                className="text-sm font-semibold text-violet-200 underline underline-offset-4 disabled:opacity-50"
+                className="text-sm font-semibold text-blue-700 underline underline-offset-4 disabled:opacity-50"
                 onClick={handleReconnect}
                 disabled={isReconnecting}
                 type="button"
@@ -507,7 +490,7 @@ const MProfilerDashboard = () => {
             )}
             {browserResultRestored && job?.status === "completed" && (
               <button
-                className="text-sm font-semibold text-[#d8d6e1] underline underline-offset-4 hover:text-white"
+                className="text-sm font-semibold text-slate-600 underline underline-offset-4 hover:text-slate-950"
                 onClick={clearSavedResult}
                 type="button"
               >
@@ -517,7 +500,7 @@ const MProfilerDashboard = () => {
           </section>
         )}
         {browserResultRestored && baseline && (
-          <p className="mt-4 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm leading-6 text-sky-100">
+          <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800">
             Restored the completed profile from this browser. Its report remains available here, in Comparison, and in
             Insights after navigation or refresh.
           </p>
@@ -525,27 +508,25 @@ const MProfilerDashboard = () => {
         {error && (
           <div
             role="alert"
-            className="mt-4 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm leading-6 text-rose-100"
+            className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-800"
           >
             {error}
           </div>
         )}
         {isActive && !error && (
-          <p className="mt-4 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm leading-6 text-sky-100">
+          <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800">
             The worker runs each scenario sequentially and captures execution traces. The report will not infer
             throughput or parallel execution.
           </p>
         )}
 
         {!baseline && !isActive && !error && (
-          <section className="mt-8 rounded-xl border border-dashed border-white/15 bg-[#0d0d15] px-5 py-12 text-center">
-            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-violet-300">
-              Ready for evidence
-            </p>
-            <h2 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-white">
+          <section className="mt-8 rounded-xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm">
+            <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Step 1 · profile</p>
+            <h2 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-slate-950">
               Run the five deterministic workloads
             </h2>
-            <p className="mx-auto mb-0 mt-3 max-w-xl text-sm leading-6 text-[#9c9bad]">
+            <p className="mx-auto mb-0 mt-3 max-w-xl text-sm leading-6 text-slate-600">
               The result view will populate with actual receipt gas, trace coverage, observed EVM slots, and dependency
               evidence from your local run.
             </p>
@@ -553,7 +534,7 @@ const MProfilerDashboard = () => {
               {Object.values(scenarioLabels).map(label => (
                 <span
                   key={label}
-                  className="rounded-full border border-white/10 bg-white/[0.035] px-3 py-1.5 text-xs text-[#c6c4d2]"
+                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600"
                 >
                   {label}
                 </span>
@@ -565,24 +546,25 @@ const MProfilerDashboard = () => {
         {baseline && (
           <>
             {job?.status === "completed" && (
-              <section className="mt-5 rounded-xl border border-violet-300/20 bg-violet-400/[0.06] p-4">
+              <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-5">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-200">
-                      Profile complete · next steps
+                    <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-700">
+                      Profile complete · continue the workflow
                     </p>
-                    <p className="mb-0 mt-1 text-sm text-[#d8d6e1]">
-                      Continue with this exact job&apos;s evidence. The source you attach is carried into Insights.
+                    <p className="mb-0 mt-1 text-sm text-slate-600">
+                      Your report is saved in this browser. Compare the revision or inspect the source without losing
+                      this run.
                     </p>
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <Link
                       href={`/compare?job=${job.id}`}
-                      className="rounded-md bg-violet-500 px-3 py-2 text-sm font-semibold text-white hover:bg-violet-400"
+                      className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
                     >
                       1. Compare revision
                     </Link>
-                    <label className="cursor-pointer rounded-md border border-violet-300/30 px-3 py-2 text-sm font-semibold text-violet-100 hover:bg-violet-400/[0.1]">
+                    <label className="cursor-pointer rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-100">
                       2. Upload source + analyze
                       <input
                         className="sr-only"
@@ -593,7 +575,7 @@ const MProfilerDashboard = () => {
                     </label>
                     <Link
                       href={`/insights?job=${job.id}`}
-                      className="rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-[#d8d6e1] hover:bg-white/5"
+                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
                     >
                       Analyze fixture
                     </Link>
@@ -601,9 +583,10 @@ const MProfilerDashboard = () => {
                 </div>
               </section>
             )}
-            <div id="attestation">
+            <section id="attestation" className="mt-5 grid gap-4 xl:grid-cols-2">
+              <TestnetDeploymentCard />
               <AttestationCard report={report} />
-            </div>
+            </section>
             {comparison && !comparison.workloadIdentical && (
               <p
                 role="alert"
@@ -617,7 +600,7 @@ const MProfilerDashboard = () => {
                 label="Local gas"
                 value={formatInteger(baseline.summary.totalGasUsed)}
                 detail="Receipt gas across baseline calls"
-                accent="violet"
+                accent="blue"
               />
               <MetricCard
                 label="Calls completed"
@@ -635,7 +618,7 @@ const MProfilerDashboard = () => {
                 label="Derived edges"
                 value={formatInteger(baseline.dependencyGraph.edges.length)}
                 detail={`Dependency depth ${baseline.dependencyGraph.modeledExecutionDepth}`}
-                accent="pink"
+                accent="teal"
               />
               <MetricCard
                 label="Hot EVM slots"
@@ -646,16 +629,16 @@ const MProfilerDashboard = () => {
             </section>
 
             <section className="mt-4 grid gap-4 xl:grid-cols-[1.55fr_0.95fr]">
-              <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
-                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-300">
+                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-700">
                         Local gas by scenario
                       </p>
-                      <h2 className="mb-0 mt-2 text-lg font-semibold text-white">Baseline versus revision</h2>
+                      <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Baseline versus revision</h2>
                     </div>
-                    <p className="m-0 text-xs leading-5 text-[#8e8da0]">
+                    <p className="m-0 text-xs leading-5 text-slate-500">
                       Identical generated inputs:{" "}
                       {comparison?.workloadIdentical ? "yes" : comparison ? "no" : "not compared"}
                     </p>
@@ -672,37 +655,39 @@ const MProfilerDashboard = () => {
                         tickLine={false}
                         tickMargin={10}
                         axisLine={false}
-                        tick={{ fill: "#9998aa", fontSize: 11 }}
+                        tick={{ fill: "#64748b", fontSize: 11 }}
                       />
                       <YAxis
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fill: "#9998aa", fontSize: 11 }}
+                        tick={{ fill: "#64748b", fontSize: 11 }}
                         tickFormatter={value =>
                           new Intl.NumberFormat("en-US", { notation: "compact" }).format(Number(value))
                         }
                       />
                       <ChartTooltip
                         cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                        content={<ChartTooltipContent className="border-white/15 !bg-[#12121d] !text-white" />}
+                        content={
+                          <ChartTooltipContent className="border-slate-200 !bg-white !text-slate-900 shadow-sm" />
+                        }
                       />
-                      <ChartLegend content={<ChartLegendContent className="text-[#c4c2d0]" />} />
+                      <ChartLegend content={<ChartLegendContent className="text-slate-600" />} />
                       <Bar dataKey="baseline" fill="var(--color-baseline)" radius={[4, 4, 0, 0]} />
                       {comparison && <Bar dataKey="revision" fill="var(--color-revision)" radius={[4, 4, 0, 0]} />}
                     </BarChart>
                   </ChartContainer>
-                  <p className="mb-0 mt-3 text-xs leading-5 text-[#858497]">
+                  <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
                     Measured from local transaction receipts. A gas delta does not establish functional equivalence or
                     an optimization claim by itself.
                   </p>
                 </CardContent>
               </Card>
-              <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
                   <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-300">
                     Dependency model
                   </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-white">Observed graph waves</h2>
+                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Observed graph waves</h2>
                   <ChartContainer config={waveChartConfig} className="mt-4 min-h-[190px] w-full !aspect-auto">
                     <BarChart
                       accessibilityLayer
@@ -715,34 +700,38 @@ const MProfilerDashboard = () => {
                         tickLine={false}
                         tickMargin={10}
                         axisLine={false}
-                        tick={{ fill: "#9998aa", fontSize: 11 }}
+                        tick={{ fill: "#64748b", fontSize: 11 }}
                       />
                       <YAxis
                         allowDecimals={false}
                         tickLine={false}
                         axisLine={false}
-                        tick={{ fill: "#9998aa", fontSize: 11 }}
+                        tick={{ fill: "#64748b", fontSize: 11 }}
                       />
                       <ChartTooltip
                         cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                        content={<ChartTooltipContent className="border-white/15 !bg-[#12121d] !text-white" />}
+                        content={
+                          <ChartTooltipContent className="border-slate-200 !bg-white !text-slate-900 shadow-sm" />
+                        }
                       />
                       <Bar dataKey="calls" fill="var(--color-calls)" radius={[4, 4, 0, 0]} />
                     </BarChart>
                   </ChartContainer>
-                  <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-white/10 pt-4 text-sm">
+                  <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 text-sm">
                     <div>
                       <dt className="text-[#88879a]">Edges</dt>
-                      <dd className="mt-1 font-mono text-white">
+                      <dd className="mt-1 font-mono text-slate-950">
                         {formatInteger(baseline.dependencyGraph.edges.length)}
                       </dd>
                     </div>
                     <div>
                       <dt className="text-[#88879a]">Model depth</dt>
-                      <dd className="mt-1 font-mono text-white">{baseline.dependencyGraph.modeledExecutionDepth}</dd>
+                      <dd className="mt-1 font-mono text-slate-950">
+                        {baseline.dependencyGraph.modeledExecutionDepth}
+                      </dd>
                     </div>
                   </dl>
-                  <p className="mb-0 mt-4 text-xs leading-5 text-[#858497]">
+                  <p className="mb-0 mt-4 text-xs leading-5 text-slate-500">
                     Waves are computed from observed storage dependencies in this sequential local run.
                   </p>
                 </CardContent>
@@ -750,14 +739,14 @@ const MProfilerDashboard = () => {
             </section>
 
             <section className="mt-4 grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
-              <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
                   <div className="flex flex-wrap items-start justify-between gap-3">
                     <div>
                       <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-pink-300">
                         Observed EVM slots
                       </p>
-                      <h2 className="mb-0 mt-2 text-lg font-semibold text-white">Hot-slot access evidence</h2>
+                      <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Hot-slot access evidence</h2>
                     </div>
                     <span className="rounded-full border border-pink-400/20 bg-pink-400/[0.07] px-2.5 py-1 text-xs text-pink-100">
                       Trace backed
@@ -776,7 +765,7 @@ const MProfilerDashboard = () => {
                           type="number"
                           tickLine={false}
                           axisLine={false}
-                          tick={{ fill: "#9998aa", fontSize: 11 }}
+                          tick={{ fill: "#64748b", fontSize: 11 }}
                           allowDecimals={false}
                         />
                         <YAxis
@@ -791,32 +780,32 @@ const MProfilerDashboard = () => {
                           cursor={{ fill: "rgba(255,255,255,0.05)" }}
                           content={
                             <ChartTooltipContent
-                              className="border-white/15 !bg-[#12121d] !text-white"
+                              className="border-slate-200 !bg-white !text-slate-900 shadow-sm"
                               labelKey="scenario"
                             />
                           }
                         />
-                        <ChartLegend content={<ChartLegendContent className="text-[#c4c2d0]" />} />
+                        <ChartLegend content={<ChartLegendContent className="text-slate-600" />} />
                         <Bar dataKey="touches" fill="var(--color-touches)" radius={[0, 4, 4, 0]} />
                         <Bar dataKey="edges" fill="var(--color-edges)" radius={[0, 4, 4, 0]} />
                       </BarChart>
                     </ChartContainer>
                   ) : (
-                    <p className="mb-0 mt-5 rounded-md border border-white/10 bg-white/[0.025] px-3 py-4 text-sm text-[#9d9bad]">
+                    <p className="mb-0 mt-5 rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
                       No repeated slot accesses were observed for this workload.
                     </p>
                   )}
-                  <p className="mb-0 mt-3 text-xs leading-5 text-[#858497]">
+                  <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
                     Slots are EVM storage keys from SLOAD/SSTORE traces. They are not physical Monad storage pages.
                   </p>
                 </CardContent>
               </Card>
-              <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
                   <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-amber-200">
                     Slot intensity
                   </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-white">Observed access matrix</h2>
+                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Observed access matrix</h2>
                   {heatMapSlots.length > 0 ? (
                     <div className="mt-5">
                       <div
@@ -836,7 +825,7 @@ const MProfilerDashboard = () => {
                               onMouseEnter={() => setActiveMatrixSlot(slot)}
                               onFocus={() => setActiveMatrixSlot(slot)}
                               onClick={() => setActiveMatrixSlot(slot)}
-                              className={`aspect-square rounded-md border transition duration-150 focus:outline-none focus:ring-2 focus:ring-amber-200/80 ${isActive ? "border-amber-100 scale-[1.06]" : "border-white/10 hover:border-amber-200/70 hover:scale-[1.04]"}`}
+                              className={`aspect-square rounded-md border transition duration-150 focus:outline-none focus:ring-2 focus:ring-amber-200/80 ${isActive ? "border-amber-100 scale-[1.06]" : "border-slate-200 hover:border-amber-300 hover:scale-[1.04]"}`}
                               style={{
                                 backgroundColor: `hsla(${278 - intensity * 228}, 88%, ${20 + intensity * 40}%, ${0.35 + intensity * 0.6})`,
                                 boxShadow: intensity > 0.75 ? "0 0 18px rgba(251, 191, 36, 0.28)" : undefined,
@@ -849,7 +838,7 @@ const MProfilerDashboard = () => {
                       </div>
                       <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-[#8d8b9c]">
                         <span>Lower observed intensity</span>
-                        <div className="h-2 w-24 rounded-full bg-gradient-to-r from-violet-700 via-fuchsia-500 to-amber-300" />
+                        <div className="h-2 w-24 rounded-full bg-gradient-to-r from-blue-700 via-sky-500 to-amber-300" />
                         <span>Higher observed intensity</span>
                       </div>
                       {(() => {
@@ -869,11 +858,11 @@ const MProfilerDashboard = () => {
                       })()}
                     </div>
                   ) : (
-                    <p className="mb-0 mt-5 rounded-md border border-white/10 bg-white/[0.025] px-3 py-4 text-sm text-[#9d9bad]">
+                    <p className="mb-0 mt-5 rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
                       No repeated slots were found in the trace evidence.
                     </p>
                   )}
-                  <p className="mb-0 mt-5 border-t border-white/10 pt-4 text-xs leading-5 text-[#858497]">
+                  <p className="mb-0 mt-5 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">
                     Each block is one observed hot EVM storage slot. Color is relative only to observed touches in this
                     report; hover, focus, or tap a block for its evidence.
                   </p>
@@ -882,13 +871,13 @@ const MProfilerDashboard = () => {
             </section>
 
             <section className="mt-4 grid gap-4 xl:grid-cols-[1.16fr_0.84fr]">
-              <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
-                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-violet-300">
+                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-700">
                     Comparison ledger
                   </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-white">Scenario measurements</h2>
-                  <div className="mt-5 overflow-x-auto rounded-lg border border-white/10">
+                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Scenario measurements</h2>
+                  <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200">
                     <table className="w-full min-w-[760px] border-collapse text-left text-sm">
                       <thead className="bg-white/[0.045] text-xs uppercase tracking-[0.11em] text-[#aaa9bb]">
                         <tr>
@@ -907,7 +896,7 @@ const MProfilerDashboard = () => {
                             edge => edge.scenarioId === scenarioId,
                           ).length;
                           return (
-                            <tr key={scenarioId} className="border-t border-white/8">
+                            <tr key={scenarioId} className="border-t border-slate-100">
                               <th scope="row" className="px-4 py-3 font-medium text-[#e2e0e9]">
                                 {scenarioName(scenarioId)}
                               </th>
@@ -944,28 +933,28 @@ const MProfilerDashboard = () => {
                   </div>
                 </CardContent>
               </Card>
-              <Card className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
                 <CardContent className="!p-5">
                   <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-200">
                     Evidence summary
                   </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-white">Review handoff</h2>
+                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Review handoff</h2>
                   <div className="mt-5 space-y-3 text-sm leading-6 text-[#c2c0cd]">
-                    <p className="m-0 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2.5">
-                      <span className="font-medium text-white">Trace coverage:</span> {baseline.traceCoverage} (
+                    <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <span className="font-medium text-slate-900">Trace coverage:</span> {baseline.traceCoverage} (
                       {completeTraceCount}/{baseline.calls.length} traces complete)
                     </p>
                     {comparison && (
-                      <p className="m-0 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2.5">
-                        <span className="font-medium text-white">Measured gas delta:</span>{" "}
+                      <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+                        <span className="font-medium text-slate-900">Measured gas delta:</span>{" "}
                         <span className={gasDelta && BigInt(gasDelta) < 0n ? "text-emerald-300" : "text-[#d8d6e1]"}>
                           {gasDelta ? formatDelta(gasDelta) : "—"}
                         </span>{" "}
                         across the current local input set.
                       </p>
                     )}
-                    <p className="m-0 rounded-md border border-white/10 bg-white/[0.025] px-3 py-2.5">
-                      <span className="font-medium text-white">Top repeated slot:</span>{" "}
+                    <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
+                      <span className="font-medium text-slate-900">Top repeated slot:</span>{" "}
                       {heatMapSlots[0]
                         ? `${shortHash(heatMapSlots[0].slot)} with ${heatMapSlots[0].touches} observed accesses`
                         : "none observed"}
@@ -976,7 +965,7 @@ const MProfilerDashboard = () => {
                     type="button"
                     disabled={!baseline}
                     onClick={handleCopyHandoff}
-                    className="mt-5 w-full rounded-md border border-violet-300/30 bg-violet-400/[0.11] px-4 py-2.5 text-sm font-semibold text-violet-100 transition hover:bg-violet-400/[0.18] disabled:cursor-not-allowed disabled:opacity-50"
+                    className="mt-5 w-full rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {copyState === "copied"
                       ? "Copied review handoff"
@@ -984,14 +973,14 @@ const MProfilerDashboard = () => {
                         ? "Clipboard unavailable"
                         : "Copy review handoff"}
                   </button>
-                  <p className="mb-0 mt-3 text-xs leading-5 text-[#858497]">
+                  <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
                     Includes workload, recorded measurements, and the measurement boundary for an engineering review.
                   </p>
                 </CardContent>
               </Card>
             </section>
 
-            <details className="mt-4 rounded-xl border border-white/10 bg-[#0e0e17] px-5 py-4">
+            <details className="mt-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
               <summary className="cursor-pointer text-sm font-semibold text-[#e4e2ea]">
                 Inspect transaction traces ({baseline.calls.length})
               </summary>
@@ -1008,7 +997,7 @@ const MProfilerDashboard = () => {
                         {call.trace.complete ? `${call.trace.accesses.length} accesses` : "Trace incomplete"}
                       </span>
                     </summary>
-                    <div className="mt-3 overflow-x-auto rounded-md border border-white/10 bg-black/20">
+                    <div className="mt-3 overflow-x-auto rounded-md border border-slate-200 bg-slate-50">
                       <table className="w-full min-w-[560px] text-left text-xs">
                         <thead className="text-[#8c8a9c]">
                           <tr>
@@ -1021,7 +1010,7 @@ const MProfilerDashboard = () => {
                           {call.trace.accesses.map((access, index) => (
                             <tr
                               key={`${access.slot}-${access.programCounter}-${index}`}
-                              className="border-t border-white/8"
+                              className="border-t border-slate-100"
                             >
                               <td className="px-3 py-2 font-mono text-[#d4d2dc]">
                                 {access.opcode} · {access.operation}
@@ -1046,7 +1035,7 @@ const MProfilerDashboard = () => {
             </details>
           </>
         )}
-        <footer className="mt-8 border-t border-white/10 py-5 text-xs leading-5 text-[#77768a]">
+        <footer className="mt-8 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500">
           Local EVM measurements · graph-derived properties · Monad Testnet checks stay separate · no Monad scheduler
           decisions measured
         </footer>

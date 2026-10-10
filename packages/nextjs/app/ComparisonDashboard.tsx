@@ -95,17 +95,17 @@ export default function ComparisonDashboard() {
   const comparison = report?.comparison;
 
   return (
-    <div className="min-h-full bg-[#07070c] text-[#f6f4ff]">
+    <div className="mprofiler-page min-h-full bg-[#f6f8fb] text-slate-900">
       <main className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
-        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-white/10 pb-6">
+        <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
           <div>
-            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-200">
+            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
               MProfiler · comparison
             </p>
-            <h1 className="mb-0 mt-2 text-3xl font-semibold tracking-[-0.05em] text-white">
+            <h1 className="mb-0 mt-2 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
               Comparable local workload results
             </h1>
-            <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-[#a7a5b6]">
+            <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-slate-600">
               Both contracts must receive the same generated inputs from the same reset state. This view compares
               measured local values and derived graph properties only.
             </p>
@@ -113,14 +113,14 @@ export default function ComparisonDashboard() {
           <div className="flex gap-2">
             <Link
               href="/"
-              className="rounded-md border border-white/15 px-3 py-2 text-sm font-semibold text-[#d8d6e1] hover:bg-white/5"
+              className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
             >
               Run profile
             </Link>
             {jobId && (
               <Link
                 href={`/insights?job=${jobId}`}
-                className="rounded-md border border-violet-300/30 px-3 py-2 text-sm font-semibold text-violet-100 hover:bg-violet-400/[0.1]"
+                className="rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
               >
                 Open insights
               </Link>
@@ -129,28 +129,25 @@ export default function ComparisonDashboard() {
         </div>
 
         {!jobId && (
-          <section className="mt-6 rounded-xl border border-dashed border-white/15 bg-[#0e0e17] px-5 py-12 text-center">
-            <h2 className="text-lg font-semibold text-white">Select a completed profiling job</h2>
-            <p className="mb-0 mt-3 text-sm text-[#aaa9bb]">
+          <section className="mt-6 rounded-xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm">
+            <h2 className="text-lg font-semibold text-slate-950">Select a completed profiling job</h2>
+            <p className="mb-0 mt-3 text-sm text-slate-500">
               Run a local profile with a revision artifact, then open this comparison from the report.
             </p>
           </section>
         )}
         {loading && (
-          <p className="mt-6 rounded-lg border border-white/10 bg-white/[0.025] px-4 py-3 text-sm text-[#c7c5d1]">
+          <p className="mt-6 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
             Loading completed report…
           </p>
         )}
         {error && (
-          <p
-            role="alert"
-            className="mt-6 rounded-lg border border-rose-400/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-100"
-          >
+          <p role="alert" className="mt-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             {error}
           </p>
         )}
         {restoredFromBrowser && (
-          <p className="mt-6 rounded-lg border border-sky-400/20 bg-sky-400/[0.06] px-4 py-3 text-sm text-sky-100">
+          <p className="mt-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
             Loaded the saved browser copy of this completed report. The worker&apos;s temporary copy is unavailable.
           </p>
         )}
@@ -167,14 +164,14 @@ export default function ComparisonDashboard() {
             ) : (
               <>
                 <section
-                  className={`mt-6 rounded-xl border px-5 py-4 ${comparison.workloadIdentical ? "border-emerald-300/30 bg-emerald-400/[0.07]" : "border-rose-400/30 bg-rose-500/[0.09]"}`}
+                  className={`mt-6 rounded-xl border px-5 py-4 ${comparison.workloadIdentical ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}
                 >
                   <p
-                    className={`m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] ${comparison.workloadIdentical ? "text-emerald-200" : "text-rose-200"}`}
+                    className={`m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] ${comparison.workloadIdentical ? "text-emerald-700" : "text-rose-700"}`}
                   >
                     Workload validity
                   </p>
-                  <p className="mb-0 mt-2 text-sm leading-6 text-white">
+                  <p className="mb-0 mt-2 text-sm leading-6 text-slate-950">
                     {comparison.workloadIdentical
                       ? "Valid comparison: baseline and revision reused the canonical generated workload from the same reset state."
                       : "Invalid comparison: the runner reported different workload inputs. Do not draw conclusions from any delta below."}
@@ -205,18 +202,16 @@ export default function ComparisonDashboard() {
                       after: revision.dependencyGraph.hotSlots.length,
                     },
                   ].map(item => (
-                    <Card key={item.label} className="border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+                    <Card key={item.label} className="border border-slate-200 !bg-white !p-0 !text-slate-950 shadow-sm">
                       <CardContent className="!p-4">
-                        <p className="m-0 font-mono text-[11px] uppercase tracking-[0.14em] text-[#9e9cad]">
-                          {item.label}
-                        </p>
+                        <p className="m-0 text-[11px] uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
                         <p className="mb-0 mt-3 font-mono text-xl font-semibold">
-                          {formatInteger(item.before)} <span className="text-[#747386]">→</span>{" "}
+                          {formatInteger(item.before)} <span className="text-slate-400">→</span>{" "}
                           {formatInteger(item.after)}
                         </p>
                         {item.delta !== undefined && (
                           <p
-                            className={`mb-0 mt-2 font-mono text-xs ${BigInt(item.delta) < 0n ? "text-emerald-300" : BigInt(item.delta) > 0n ? "text-rose-300" : "text-[#b9b7c5]"}`}
+                            className={`mb-0 mt-2 font-mono text-xs ${BigInt(item.delta) < 0n ? "text-emerald-700" : BigInt(item.delta) > 0n ? "text-rose-700" : "text-slate-500"}`}
                           >
                             {formatDelta(item.delta)} gas
                           </p>
@@ -225,15 +220,15 @@ export default function ComparisonDashboard() {
                     </Card>
                   ))}
                 </section>
-                <Card className="mt-4 border border-white/10 !bg-[#0e0e17] !p-0 !text-white">
+                <Card className="mt-4 border border-slate-200 !bg-white !p-0 !text-slate-950 shadow-sm">
                   <CardContent className="!p-5">
-                    <p className="m-0 font-mono text-[11px] uppercase tracking-[0.15em] text-violet-300">
+                    <p className="m-0 font-mono text-[11px] uppercase tracking-[0.15em] text-blue-700">
                       Scenario deltas
                     </p>
                     <h2 className="mb-0 mt-2 text-lg font-semibold">Same generated workload inputs</h2>
-                    <div className="mt-5 overflow-x-auto rounded-lg border border-white/10">
+                    <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200">
                       <table className="w-full min-w-[980px] text-left text-sm">
-                        <thead className="bg-white/[0.045] text-xs uppercase tracking-[0.1em] text-[#aaa9bb]">
+                        <thead className="bg-slate-50 text-xs uppercase tracking-[0.1em] text-slate-500">
                           <tr>
                             <th className="px-4 py-3">Scenario</th>
                             <th className="px-4 py-3 text-right">Baseline gas</th>
@@ -246,28 +241,28 @@ export default function ComparisonDashboard() {
                         </thead>
                         <tbody>
                           {rows.map(row => (
-                            <tr key={row.scenarioId} className="border-t border-white/8">
-                              <th className="px-4 py-3 font-medium text-[#e0dee8]">
+                            <tr key={row.scenarioId} className="border-t border-slate-100">
+                              <th className="px-4 py-3 font-medium text-slate-800">
                                 {labels[row.scenarioId] ?? row.scenarioId}
                               </th>
-                              <td className="px-4 py-3 text-right font-mono text-[#c7c5d1]">
+                              <td className="px-4 py-3 text-right font-mono text-slate-600">
                                 {formatInteger(row.baselineGasUsed)}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono text-[#c7c5d1]">
+                              <td className="px-4 py-3 text-right font-mono text-slate-600">
                                 {formatInteger(row.revisionGasUsed)}
                               </td>
                               <td
-                                className={`px-4 py-3 text-right font-mono ${BigInt(row.gasDeltaRevisionMinusBaseline) < 0n ? "text-emerald-300" : BigInt(row.gasDeltaRevisionMinusBaseline) > 0n ? "text-rose-300" : "text-[#c7c5d1]"}`}
+                                className={`px-4 py-3 text-right font-mono ${BigInt(row.gasDeltaRevisionMinusBaseline) < 0n ? "text-emerald-700" : BigInt(row.gasDeltaRevisionMinusBaseline) > 0n ? "text-rose-700" : "text-slate-600"}`}
                               >
                                 {formatDelta(row.gasDeltaRevisionMinusBaseline)}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono text-[#c7c5d1]">
+                              <td className="px-4 py-3 text-right font-mono text-slate-600">
                                 {formatInteger(row.baselineReadAccesses)}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono text-[#c7c5d1]">
+                              <td className="px-4 py-3 text-right font-mono text-slate-600">
                                 {formatInteger(row.baselineWriteAccesses)}
                               </td>
-                              <td className="px-4 py-3 text-right font-mono text-[#c7c5d1]">
+                              <td className="px-4 py-3 text-right font-mono text-slate-600">
                                 {formatInteger(row.baselineDependencyEdges)} →{" "}
                                 {formatInteger(row.revisionDependencyEdges)}
                               </td>
