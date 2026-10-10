@@ -71,35 +71,40 @@ export const Header = () => {
 
   return (
     <div
-      className={`${isProfilerPage ? "border-b border-slate-200 bg-white" : "sticky top-0 z-20 navbar min-h-0 shrink-0 justify-between bg-base-100 px-0 shadow-md shadow-secondary sm:px-2 lg:static"}`}
+      className={`${isProfilerPage ? "border-b border-slate-100 bg-white" : "sticky top-0 z-20 navbar min-h-0 shrink-0 justify-between bg-base-100 px-0 shadow-md shadow-secondary sm:px-2 lg:static"}`}
     >
       {isProfilerPage ? (
-        <div className="mx-auto flex min-h-[68px] w-full max-w-[1440px] items-center justify-between gap-5 px-5 sm:px-8 lg:px-12">
+        <div className="mx-auto flex min-h-[76px] w-full max-w-[1500px] items-center justify-between gap-5 px-5 sm:px-8 lg:px-12">
           <div className="flex items-center gap-4">
-            <Link href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-[-0.04em] text-slate-950">
+            <Link href="/" className="flex items-center gap-2.5 text-lg font-bold tracking-[-0.045em] text-[#111113]">
               <span
                 aria-hidden="true"
-                className="grid h-8 w-8 place-items-center rounded-md bg-blue-700 text-sm font-bold text-white shadow-sm"
+                className="grid h-8 w-8 place-items-center rounded-lg bg-[#111113] text-sm font-bold text-white"
               >
                 M
               </span>
               MProfiler
             </Link>
-            <span className="hidden h-7 border-l border-slate-200 sm:block" />
-            <span className="hidden items-center gap-2 text-sm text-slate-500 lg:flex">
-              <i className="h-2 w-2 rounded-full bg-teal-500" />
-              Local workspace
-            </span>
           </div>
           {pathname === "/" && (
-            <nav className="flex items-center gap-4 text-sm font-semibold text-slate-600">
-              <Link href="/#workflow" className="hidden hover:text-slate-950 sm:inline">
-                Workflow
+            <nav className="flex items-center gap-3 text-sm font-semibold text-slate-600 sm:gap-6">
+              <Link href="/#workflow" className="hidden transition hover:text-slate-950 sm:inline">
+                How it works
               </Link>
-              <Link href="/#evidence" className="hidden hover:text-slate-950 sm:inline">
+              <Link href="/#evidence" className="hidden transition hover:text-slate-950 md:inline">
                 Evidence
               </Link>
-              <Link href="/profile" className="rounded-md bg-blue-700 px-3 py-2 text-white hover:bg-blue-800">Launch profiler</Link>
+              <a
+                href="https://youtu.be/E0OgbbPYkLk"
+                target="_blank"
+                rel="noreferrer"
+                className="hidden transition hover:text-slate-950 lg:inline"
+              >
+                Demo ↗
+              </a>
+              <Link href="/profile" className="rounded-xl bg-[#111113] px-4 py-2.5 text-white transition hover:bg-slate-700">
+                Start profiling
+              </Link>
             </nav>
           )}
           {pathname !== "/" && pathname !== "/debug" && <FlowNavigation />}
