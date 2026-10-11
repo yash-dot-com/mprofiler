@@ -41,7 +41,12 @@ async function runWorkload(artifactName: string): Promise<RunResult> {
       if (!receipt) throw new Error(`Transaction ${step.workloadCaseId} did not return a receipt.`);
 
       const rawTrace: unknown = await network.provider.send("debug_traceTransaction", [receipt.hash]);
-      rawTraces.push({ scenarioId: step.scenarioId, workloadCaseId: step.workloadCaseId, transactionHash: receipt.hash, trace: rawTrace });
+      rawTraces.push({
+        scenarioId: step.scenarioId,
+        workloadCaseId: step.workloadCaseId,
+        transactionHash: receipt.hash,
+        trace: rawTrace,
+      });
       calls.push({
         workloadCaseId: step.workloadCaseId,
         input: contract.interface.encodeFunctionData(step.method, step.args),
@@ -106,4 +111,3 @@ main().catch(error => {
   console.error(error);
   process.exitCode = 1;
 });
-

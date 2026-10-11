@@ -1,9 +1,13 @@
 "use client";
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
-import Link from "next/link";
 import { Bar, BarChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { AttestationCard } from "~~/components/mprofiler/AttestationCard";
+import { CompareLens } from "~~/components/mprofiler/CompareLens";
+import { DependencyLens } from "~~/components/mprofiler/DependencyLens";
+import { ExecutionTimeline } from "~~/components/mprofiler/ExecutionTimeline";
+import { FindingsLens } from "~~/components/mprofiler/FindingsLens";
+import { StorageLens } from "~~/components/mprofiler/StorageLens";
 import { TestnetDeploymentCard } from "~~/components/mprofiler/TestnetDeploymentCard";
 import { Card, CardContent } from "~~/components/ui/card";
 import {
@@ -14,6 +18,8 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from "~~/components/ui/chart";
+import { type ContractInsightsReport } from "~~/lib/mprofiler/insights";
+import { type Mip8Analysis, deriveClientMip8 } from "~~/lib/mprofiler/mip8";
 import {
   clearStoredProfileResult,
   loadStoredContractDraft,
@@ -25,6 +31,7 @@ import {
 
 type JobStatus = "queued" | "running" | "completed" | "failed" | "expired";
 type ProfileJob = { id: string; status: JobStatus; createdAt: string; updatedAt: string; error: string | null };
+
 type TraceAccess = {
   contractAddress: string;
   operation: "read" | "write";
@@ -33,6 +40,7 @@ type TraceAccess = {
   programCounter: number;
   depth: number;
 };
+
 type ProfileCall = {
   workloadCaseId: string;
   transactionHash: string;
@@ -40,6 +48,7 @@ type ProfileCall = {
   gasUsed: string;
   trace: { complete: boolean; accesses: TraceAccess[]; warnings: string[] };
 };
+
 type DependencyEdge = {
   scenarioId: string;
   fromTxIndex: number;
@@ -47,7 +56,9 @@ type DependencyEdge = {
   kind: string;
   sharedSlots: Array<{ contractAddress: string; slot: string }>;
 };
+
 type DependencyNode = { callIndex: number; transactionHash: string; wave: number };
+
 type HotSlot = {
   scenarioId: string;
   contractAddress: string;
@@ -56,6 +67,7 @@ type HotSlot = {
   callCount: number;
   dependencyEdgeCount: number;
 };
+
 type ReportSide = {
   contract: { name: string };
   workload: { batchSize: number; controlledAccountCount: number; scenarios: string[] };
@@ -69,18 +81,24 @@ type ReportSide = {
     modeledExecutionDepth: number;
     note: string;
   };
+  mip8?: Mip8Analysis;
 };
+
 type ScenarioComparison = {
   scenarioId: string;
   baselineGasUsed: string;
   revisionGasUsed: string;
   gasDeltaRevisionMinusBaseline: string;
   baselineCallCount: number;
+  revisionCallCount: number;
   baselineReadAccesses: number;
+  revisionReadAccesses: number;
   baselineWriteAccesses: number;
+  revisionWriteAccesses: number;
   baselineDependencyEdges: number;
   revisionDependencyEdges: number;
 };
+
 type ProfileReport = {
   baseline: ReportSide;
   revision?: ReportSide | null;
@@ -88,10 +106,24 @@ type ProfileReport = {
     workloadIdentical: boolean;
     totalGasUsed: { baseline: string; revision: string; deltaRevisionMinusBaseline: string };
     scenarios: ScenarioComparison[];
+    mip8?: {
+      baselineDistinctPages: number;
+      revisionDistinctPages: number;
+      deltaDistinctPages: number;
+      baselineWarmTouches: number;
+      revisionWarmTouches: number;
+      deltaWarmTouches: number;
+      baselineModeledSloadGas: number;
+      revisionModeledSloadGas: number;
+      deltaModeledSloadGas: number;
+    };
     note: string;
   } | null;
 };
+
 type QuickNodeCheck = { state: "idle" | "checking" | "connected" | "wrong-network" | "failed"; detail: string };
+
+type LensTab = "overview" | "execution" | "storage" | "dependencies" | "compare" | "findings";
 
 const insightSourceStorageKey = "mprofiler.insights.source";
 
@@ -102,6 +134,7 @@ const scenarioLabels: Record<string, string> = {
   "mixed-reads-writes": "Mixed reads and writes",
   "read-heavy": "Read-heavy",
 };
+
 const shortScenarioLabels: Record<string, string> = {
   "independent-mapping-writes": "Independent",
   "shared-global-counter-writes": "Global counter",
@@ -109,21 +142,56 @@ const shortScenarioLabels: Record<string, string> = {
   "mixed-reads-writes": "Mixed R/W",
   "read-heavy": "Read-heavy",
 };
+
 const gasChartConfig = {
   baseline: { label: "Baseline", color: "#2563eb" },
   revision: { label: "Revision", color: "#0f766e" },
 } satisfies ChartConfig;
-const slotChartConfig = {
-  touches: { label: "Observed accesses", color: "#0284c7" },
-  edges: { label: "Derived edges", color: "#0f766e" },
-} satisfies ChartConfig;
+
 const waveChartConfig = { calls: { label: "Calls", color: "#2563eb" } } satisfies ChartConfig;
+
+const defaultFixtureSource = `// SPDX-License-Identifier: MIT
+pragma solidity 0.8.20;
+
+contract ProfileWorkloads {
+    mapping(uint256 => uint256) private independentValues;
+    uint256 private globalCounter;
+    mapping(bytes32 => uint256) private keyedValues;
+    bytes32 private constant SHARED_KEY = keccak256("mprofiler-shared-key-v1");
+
+    event ReadObserved(uint256 indexed key, uint256 value);
+
+    function writeIndependent(uint256 key, uint256 value) external {
+        independentValues[key] = value;
+    }
+
+    function writeSharedCounter(uint256 amount) external {
+        globalCounter += amount;
+    }
+
+    function writeSameKey(uint256 value) external {
+        keyedValues[SHARED_KEY] = value;
+    }
+
+    function mixedReadWrite(uint256 key, uint256 amount) external {
+        bytes32 slot = bytes32(key);
+        uint256 current = keyedValues[slot];
+        keyedValues[slot] = current + amount;
+        globalCounter += current;
+    }
+
+    function readHeavy(uint256 key) external returns (uint256 value) {
+        value = keyedValues[bytes32(key)];
+        emit ReadObserved(key, value);
+    }
+}`;
 
 const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds));
 const scenarioName = (id: string) => scenarioLabels[id] ?? id.replaceAll("-", " ");
 const shortScenarioName = (id: string) => shortScenarioLabels[id] ?? scenarioName(id);
 const shortHash = (value: string) => `${value.slice(0, 10)}…${value.slice(-8)}`;
-const formatInteger = (value: string | number) => new Intl.NumberFormat("en-US").format(BigInt(value));
+const formatInteger = (value: string | number | bigint) => new Intl.NumberFormat("en-US").format(BigInt(value));
+
 type ManifestCallDraft = { function: string; args: unknown[]; caller: number; repeat: number; label: string };
 
 function sampleArgument(type: string): unknown {
@@ -157,21 +225,17 @@ function deriveCallManifest(source: string): ManifestCallDraft[] {
       label: name,
     });
   }
-  // One focused call produces an understandable first report. Developers can add calls after inspecting it.
   const preferred = candidates.find(call => /(?:update|write|set|increment|decrement|mutate)/i.test(call.label));
   return preferred ? [preferred] : candidates.slice(0, 1);
 }
-function formatDelta(value: string) {
-  const delta = BigInt(value);
-  const amount = new Intl.NumberFormat("en-US").format(delta < 0n ? -delta : delta);
-  return delta < 0n ? `−${amount}` : delta > 0n ? `+${amount}` : "0";
-}
+
 function sumScenarioGas(side: ReportSide, scenarioId: string) {
   return side.calls
     .filter(call => call.workloadCaseId.startsWith(`${scenarioId}:`))
     .reduce((sum, call) => sum + BigInt(call.gasUsed), 0n)
     .toString();
 }
+
 async function readJson<T>(response: Response): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok)
@@ -201,14 +265,12 @@ function MetricCard({
   }[accent];
   const [gradient, textColor] = colors.split(" text-");
   return (
-    <Card className="relative min-h-[132px] overflow-hidden border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
+    <Card className="relative min-h-[120px] overflow-hidden border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
       <div className={`pointer-events-none absolute inset-0 bg-gradient-to-br ${gradient}`} />
-      <CardContent className="relative flex min-h-[132px] flex-col justify-between !p-4">
+      <CardContent className="relative flex min-h-[120px] flex-col justify-between !p-4">
         <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.15em] text-slate-500">{label}</p>
         <div>
-          <p className={`m-0 font-mono text-2xl font-semibold tracking-[-0.06em] sm:text-3xl text-${textColor}`}>
-            {value}
-          </p>
+          <p className={`m-0 font-mono text-2xl font-semibold tracking-[-0.06em] text-${textColor}`}>{value}</p>
           <p className="m-0 mt-1 text-xs leading-5 text-slate-500">{detail}</p>
         </div>
       </CardContent>
@@ -216,7 +278,14 @@ function MetricCard({
   );
 }
 
-const MProfilerDashboard = () => {
+export default function MProfilerDashboard() {
+  // Navigation & PEV Synchronization State
+  const [activeLens, setActiveLens] = useState<LensTab>("overview");
+  const [selectedCallIndex, setSelectedCallIndex] = useState<number | null>(null);
+  const [selectedSlot, setSelectedSlot] = useState<string | null>(null);
+  const [isSetupOpen, setIsSetupOpen] = useState(false);
+
+  // Workload and Run State
   const [batchSize, setBatchSize] = useState("3");
   const [accountCount, setAccountCount] = useState("2");
   const [revisionArtifact, setRevisionArtifact] = useState("ProfileWorkloadsRevision");
@@ -225,10 +294,10 @@ const MProfilerDashboard = () => {
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isReconnecting, setIsReconnecting] = useState(false);
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const [activeMatrixSlot, setActiveMatrixSlot] = useState<HotSlot | null>(null);
   const [browserResultRestored, setBrowserResultRestored] = useState(false);
   const [storageReady, setStorageReady] = useState(false);
+
+  // Solidity Editor Drafts
   const [baselineSource, setBaselineSource] = useState("");
   const [revisionSource, setRevisionSource] = useState("");
   const [baselineFileName, setBaselineFileName] = useState("");
@@ -238,12 +307,19 @@ const MProfilerDashboard = () => {
   const [constructorArgs, setConstructorArgs] = useState("[]");
   const [callManifest, setCallManifest] = useState("[]");
   const [manifestHint, setManifestHint] = useState("Upload or paste source, then generate a starter call.");
+
+  // Diagnostics and Insights State
+  const [insightsReport, setInsightsReport] = useState<ContractInsightsReport | null>(null);
+  const [isAnalyzingInsights, setIsAnalyzingInsights] = useState(false);
+
+  // Monad Testnet QuickNode State
   const [quickNodeUrl, setQuickNodeUrl] = useState("");
   const [quickNodeCheck, setQuickNodeCheck] = useState<QuickNodeCheck>({
     state: "idle",
     detail: "Paste a Monad Testnet QuickNode URL to run a browser-only chain identity check.",
   });
 
+  // Restore saved state from local storage
   useEffect(() => {
     const saved = loadStoredProfileResult();
     if (saved) {
@@ -267,11 +343,13 @@ const MProfilerDashboard = () => {
     setStorageReady(true);
   }, []);
 
+  // Persist completed run to local storage
   useEffect(() => {
     if (!storageReady || job?.status !== "completed" || !report) return;
     saveProfileResult(job, report);
   }, [job, report, storageReady]);
 
+  // Persist code draft
   useEffect(() => {
     if (!storageReady) return;
     saveContractDraft({ baselineSource, revisionSource, contractName, constructorArgs, callManifest });
@@ -308,14 +386,70 @@ const MProfilerDashboard = () => {
     }
   };
 
-  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
+  const handleContractSubmit = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setError(null);
+    let parsedConstructorArgs: unknown[];
+    let parsedCalls: unknown[];
+    try {
+      parsedConstructorArgs = JSON.parse(constructorArgs) as unknown[];
+      parsedCalls = JSON.parse(callManifest) as unknown[];
+      if (!Array.isArray(parsedConstructorArgs) || !Array.isArray(parsedCalls) || parsedCalls.length === 0) {
+        throw new Error("Constructor arguments must be an array and the call manifest needs at least one call.");
+      }
+    } catch (manifestError) {
+      setError(manifestError instanceof Error ? manifestError.message : "The workload JSON is invalid.");
+      return;
+    }
+    if (!baselineSource.trim()) {
+      setError("Upload or paste the baseline Solidity contract first.");
+      return;
+    }
+    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(contractName.trim())) {
+      setError("Enter the exact Solidity contract name to deploy.");
+      return;
+    }
+    setIsSubmitting(true);
+    setReport(null);
+    setJob(null);
+    setSelectedCallIndex(null);
+    setSelectedSlot(null);
+    setBrowserResultRestored(false);
+    try {
+      window.sessionStorage.setItem(insightSourceStorageKey, baselineSource);
+      saveInsightDraft(baselineSource, null);
+      const startedJob = await readJson<ProfileJob>(
+        await fetch("/api/profile/jobs", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            mode: "contract",
+            baseline: { source: baselineSource },
+            ...(revisionSource.trim() ? { revision: { source: revisionSource } } : {}),
+            workload: {
+              contractName: contractName.trim(),
+              constructorArgs: parsedConstructorArgs,
+              calls: parsedCalls,
+            },
+          }),
+        }),
+      );
+      await watchJob(startedJob);
+    } catch (requestError) {
+      setError(requestError instanceof Error ? requestError.message : "Could not start the contract profile.");
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handleFixtureSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsSubmitting(true);
     setReport(null);
     setJob(null);
     setError(null);
-    setCopyState("idle");
-    setActiveMatrixSlot(null);
+    setSelectedCallIndex(null);
+    setSelectedSlot(null);
     setBrowserResultRestored(false);
     try {
       const startedJob = await readJson<ProfileJob>(
@@ -352,12 +486,10 @@ const MProfilerDashboard = () => {
       const calls = deriveCallManifest(source);
       if (calls.length > 0) {
         setCallManifest(JSON.stringify(calls, null, 2));
-        setManifestHint(
-          `Generated a starter call: ${calls[0].function}. Edit it if your setup needs different values.`,
-        );
+        setManifestHint(`Generated starter call: ${calls[0].function}.`);
       } else {
         setCallManifest("[]");
-        setManifestHint("No state-changing Solidity function was detected. Add a transaction call manually.");
+        setManifestHint("No state-changing function detected. Add calls manually.");
       }
       if (!contractName) {
         const match = source.match(/\bcontract\s+([A-Za-z][A-Za-z0-9_]*)/);
@@ -372,7 +504,7 @@ const MProfilerDashboard = () => {
   const generateCallManifest = () => {
     const calls = deriveCallManifest(baselineSource);
     if (calls.length === 0) {
-      setError("No state-changing Solidity function was detected in this source. Add a call manually.");
+      setError("No state-changing Solidity function was detected in this source.");
       return;
     }
     setCallManifest(JSON.stringify(calls, null, 2));
@@ -380,66 +512,8 @@ const MProfilerDashboard = () => {
       const contractMatch = baselineSource.match(/\bcontract\s+([A-Za-z][A-Za-z0-9_]*)/);
       if (contractMatch) setContractName(contractMatch[1]);
     }
-    setManifestHint(
-      `Generated a starter call: ${calls[0].function}. It uses safe zero-value arguments; edit it when your contract needs setup values.`,
-    );
+    setManifestHint(`Generated starter call: ${calls[0].function}.`);
     setError(null);
-  };
-
-  const handleContractSubmit = async (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    setError(null);
-    let parsedConstructorArgs: unknown[];
-    let parsedCalls: unknown[];
-    try {
-      parsedConstructorArgs = JSON.parse(constructorArgs) as unknown[];
-      parsedCalls = JSON.parse(callManifest) as unknown[];
-      if (!Array.isArray(parsedConstructorArgs) || !Array.isArray(parsedCalls) || parsedCalls.length === 0) {
-        throw new Error("Constructor arguments must be an array and the call manifest needs at least one call.");
-      }
-    } catch (manifestError) {
-      setError(manifestError instanceof Error ? manifestError.message : "The workload JSON is invalid.");
-      return;
-    }
-    if (!baselineSource.trim()) {
-      setError("Upload or paste the baseline Solidity contract first.");
-      return;
-    }
-    if (!/^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(contractName.trim())) {
-      setError("Enter the exact Solidity contract name to deploy.");
-      return;
-    }
-    setIsSubmitting(true);
-    setReport(null);
-    setJob(null);
-    setCopyState("idle");
-    setActiveMatrixSlot(null);
-    setBrowserResultRestored(false);
-    try {
-      window.sessionStorage.setItem(insightSourceStorageKey, baselineSource);
-      saveInsightDraft(baselineSource, null);
-      const startedJob = await readJson<ProfileJob>(
-        await fetch("/api/profile/jobs", {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            mode: "contract",
-            baseline: { source: baselineSource },
-            ...(revisionSource.trim() ? { revision: { source: revisionSource } } : {}),
-            workload: {
-              contractName: contractName.trim(),
-              constructorArgs: parsedConstructorArgs,
-              calls: parsedCalls,
-            },
-          }),
-        }),
-      );
-      await watchJob(startedJob);
-    } catch (requestError) {
-      setError(requestError instanceof Error ? requestError.message : "Could not start the contract profile.");
-    } finally {
-      setIsSubmitting(false);
-    }
   };
 
   const handleReconnect = async () => {
@@ -453,6 +527,16 @@ const MProfilerDashboard = () => {
     } finally {
       setIsReconnecting(false);
     }
+  };
+
+  const clearSavedResult = () => {
+    clearStoredProfileResult();
+    setJob(null);
+    setReport(null);
+    setError(null);
+    setBrowserResultRestored(false);
+    setSelectedCallIndex(null);
+    setSelectedSlot(null);
   };
 
   const checkQuickNode = async () => {
@@ -471,7 +555,8 @@ const MProfilerDashboard = () => {
         body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "eth_chainId", params: [] }),
       });
       const payload = (await response.json().catch(() => ({}))) as { result?: unknown };
-      if (!response.ok || typeof payload.result !== "string") throw new Error("The endpoint did not return an eth_chainId result.");
+      if (!response.ok || typeof payload.result !== "string")
+        throw new Error("The endpoint did not return an eth_chainId result.");
       if (payload.result !== "0x279f") {
         setQuickNodeCheck({
           state: "wrong-network",
@@ -488,30 +573,72 @@ const MProfilerDashboard = () => {
     }
   };
 
-  const clearSavedResult = () => {
-    clearStoredProfileResult();
-    setJob(null);
-    setReport(null);
-    setError(null);
-    setBrowserResultRestored(false);
-    setActiveMatrixSlot(null);
+  // Synchronized PEV Selection Handlers
+  const handleSelectCall = (index: number) => {
+    setSelectedCallIndex(prev => (prev === index ? null : index));
   };
 
-  const revealRevision = () => {
-    setShowRevision(true);
-    window.setTimeout(
-      () => document.getElementById("revision-source")?.scrollIntoView({ behavior: "smooth", block: "center" }),
-      0,
-    );
+  const handleSelectSlot = (slot: string | null) => {
+    setSelectedSlot(prev => (prev === slot ? null : slot));
   };
 
+  const handleClearFilters = () => {
+    setSelectedCallIndex(null);
+    setSelectedSlot(null);
+  };
+
+  // Run Insights Analysis
+  const runInsightsAnalysis = async () => {
+    const src = baselineSource.trim() || defaultFixtureSource;
+    setIsAnalyzingInsights(true);
+    try {
+      const evidence = {
+        traceCoverage: baseline?.traceCoverage,
+        observedAccesses: totalObservedAccesses,
+        dependencyEdges: baseline?.dependencyGraph.edges.length,
+        hotSlots: baseline?.dependencyGraph.hotSlots.length,
+        sharedCounterEdges: baseline?.dependencyGraph.edges.filter(e => e.scenarioId === "shared-global-counter-writes")
+          .length,
+      };
+      const res = await fetch("/api/profile/insights", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ source: src, evidence }),
+      });
+      const data = await res.json();
+      if (res.ok) setInsightsReport(data);
+    } catch (err) {
+      console.error("Failed to run insights analysis:", err);
+    } finally {
+      setIsAnalyzingInsights(false);
+    }
+  };
+
+  // Computed Analytical Data
   const isActive = job?.status === "queued" || job?.status === "running";
   const baseline = report?.baseline;
   const comparison = report?.comparison;
+
+  const totalObservedAccesses = useMemo(() => {
+    return baseline?.calls.reduce((total, call) => total + call.trace.accesses.length, 0) ?? 0;
+  }, [baseline]);
+
+  // MIP-8 Derivation
+  const baselineMip8: Mip8Analysis | null = useMemo(() => {
+    if (!baseline) return null;
+    return baseline.mip8 ?? deriveClientMip8(baseline.calls);
+  }, [baseline]);
+
+  const revisionMip8: Mip8Analysis | null = useMemo(() => {
+    if (!report?.revision) return null;
+    return report.revision.mip8 ?? deriveClientMip8(report.revision.calls);
+  }, [report?.revision]);
+
   const comparisonByScenario = useMemo(
     () => new Map((comparison?.scenarios ?? []).map(item => [item.scenarioId, item])),
     [comparison],
   );
+
   const scenarioChartData = useMemo(
     () =>
       baseline?.workload.scenarios.map(scenarioId => {
@@ -524,107 +651,914 @@ const MProfilerDashboard = () => {
       }) ?? [],
     [baseline, comparisonByScenario],
   );
-  const slotChartData = useMemo(
-    () =>
-      baseline?.dependencyGraph.hotSlots.slice(0, 6).map((slot, index) => ({
-        label: `${index + 1}. ${shortHash(slot.slot)}`,
-        scenario: shortScenarioName(slot.scenarioId),
-        touches: slot.touches,
-        edges: slot.dependencyEdgeCount,
-      })) ?? [],
-    [baseline],
-  );
+
   const waveChartData = useMemo(() => {
     if (!baseline) return [];
     const counts = new Map<number, number>();
     baseline.dependencyGraph.nodes.forEach(node => counts.set(node.wave, (counts.get(node.wave) ?? 0) + 1));
     return [...counts.entries()].map(([wave, calls]) => ({ wave: `Wave ${wave + 1}`, calls }));
   }, [baseline]);
-  const heatMapSlots = baseline?.dependencyGraph.hotSlots.slice(0, 10) ?? [];
+
+  const heatMapSlots = baseline?.dependencyGraph.hotSlots.slice(0, 16) ?? [];
   const maxTouches = Math.max(1, ...heatMapSlots.map(slot => slot.touches));
-  const totalObservedAccesses = baseline?.calls.reduce((total, call) => total + call.trace.accesses.length, 0) ?? 0;
-  const completeTraceCount = baseline?.calls.filter(call => call.trace.complete).length ?? 0;
-  const gasDelta = comparison?.totalGasUsed.deltaRevisionMinusBaseline;
-  const handoffText = baseline
-    ? [
-        `MProfiler local report — ${baseline.contract.name}`,
-        `Workload: ${baseline.workload.scenarios.length} deterministic scenarios, batch ${baseline.workload.batchSize}, ${baseline.workload.controlledAccountCount} controlled accounts.`,
-        `Local gas: ${formatInteger(baseline.summary.totalGasUsed)} across ${baseline.summary.callCount} calls.`,
-        comparison
-          ? `Inputs identical: ${comparison.workloadIdentical ? "yes" : "no"}. Revision gas delta: ${formatDelta(comparison.totalGasUsed.deltaRevisionMinusBaseline)}.`
-          : "No revision artifact was included.",
-        `Trace coverage: ${baseline.traceCoverage}; observed SLOAD/SSTORE accesses: ${totalObservedAccesses}.`,
-        `Derived graph: ${baseline.dependencyGraph.edges.length} edges, depth ${baseline.dependencyGraph.modeledExecutionDepth}, ${baseline.dependencyGraph.hotSlots.length} hot EVM slots.`,
-        "Scope: local EVM measurements and graph-derived properties only. No Monad scheduler decisions or throughput are measured.",
-      ].join("\n")
-    : "";
-  const handleCopyHandoff = async () => {
-    if (!handoffText) return;
-    try {
-      await navigator.clipboard.writeText(handoffText);
-      setCopyState("copied");
-    } catch {
-      setCopyState("failed");
-    }
-  };
+
   return (
-    <div className="mprofiler-page min-h-full bg-[#f6f8fb] text-slate-900 selection:bg-blue-100">
-      <main className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
-        <section className="rounded-2xl border border-slate-200 bg-white px-5 py-7 shadow-sm sm:px-8">
-          <div>
-            <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.19em] text-blue-700">
-              MProfiler workspace · local EVM
-            </p>
-            <h1 className="mt-2 text-3xl font-semibold tracking-[-0.055em] text-slate-950 sm:text-4xl">
-              Find storage pressure before deployment.
-            </h1>
-            <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
-              Profile one Solidity contract, inspect trace-backed storage evidence, then send an evidence-bound handoff
-              to your coding agent.
-            </p>
+    <div className="mprofiler-workbench min-h-screen bg-[#f8fafc] text-slate-900 selection:bg-blue-100">
+      <main className="mx-auto w-full max-w-[1480px] px-4 py-8 sm:px-6 lg:px-8">
+        {/* Top Header & Workspace Identity */}
+        <section className="rounded-2xl border border-slate-200 bg-white p-6 shadow-sm sm:p-8">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center rounded-md bg-blue-50 px-2.5 py-1 text-xs font-semibold text-blue-700 ring-1 ring-inset ring-blue-700/10">
+                  MProfiler Workbench
+                </span>
+                <span className="inline-flex items-center rounded-md bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                  PEV Cross-Linking + MIP-8 Analysis
+                </span>
+              </div>
+              <h1 className="mt-3 text-3xl font-extrabold tracking-tight text-slate-950 sm:text-4xl">
+                Monad Concurrency & Storage Profiler
+              </h1>
+              <p className="mb-0 mt-2 max-w-3xl text-sm leading-6 text-slate-600 sm:text-base">
+                Inspect trace-backed storage evidence, analyze MIP-8 128-slot logical page locality, discover directed
+                execution dependencies, and generate evidence-bound coding-agent handoffs.
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsSetupOpen(prev => !prev)}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+              >
+                {isSetupOpen ? "Close Workload Setup ▲" : "Workload Setup & Source ▼"}
+              </button>
+              {baseline && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveLens("findings");
+                    if (!insightsReport) runInsightsAnalysis();
+                  }}
+                  className="rounded-xl bg-blue-700 px-4 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800"
+                >
+                  Generate Agent Handoff ✦
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Quick Active Run Status Summary */}
+          {baseline && !isSetupOpen && (
+            <div className="mt-5 flex flex-wrap items-center justify-between gap-3 border-t border-slate-100 pt-4 text-xs text-slate-500">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="font-semibold text-slate-700">Active Profile:</span>
+                <code className="rounded bg-slate-100 px-2 py-0.5 font-mono text-slate-900 font-semibold">
+                  {baseline.contract.name}
+                </code>
+                <span>·</span>
+                <span>{baseline.summary.callCount} calls</span>
+                <span>·</span>
+                <span className="font-mono">{formatInteger(baseline.summary.totalGasUsed)} gas</span>
+                <span>·</span>
+                <span>{baselineMip8?.distinctPages ?? 0} MIP-8 pages</span>
+                <span>·</span>
+                <span>{baseline.dependencyGraph.edges.length} conflict edges</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSetupOpen(true)}
+                className="font-semibold text-blue-700 underline underline-offset-4 hover:text-blue-900"
+              >
+                Reconfigure Workload or Add Revision
+              </button>
+            </div>
+          )}
         </section>
 
-        <section className="mt-5 overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 text-white shadow-xl shadow-slate-300/40">
-          <div className="grid gap-6 px-5 py-6 sm:px-7 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
+        {/* Collapsible Workload Setup Drawer */}
+        {isSetupOpen && (
+          <section className="mt-6 rounded-2xl border border-blue-200 bg-white p-6 shadow-md transition-all">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+              <div>
+                <h2 className="m-0 text-base font-bold text-slate-950">Workload Configuration & Contract Deployment</h2>
+                <p className="mb-0 mt-1 text-xs text-slate-500">
+                  Profile custom Solidity contracts or run the built-in reference fixture workloads.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsSetupOpen(false)}
+                className="rounded-lg p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Custom Solidity Flow */}
+            <form onSubmit={handleContractSubmit} className="mt-5">
+              <div className="grid gap-5 lg:grid-cols-2">
+                {/* Baseline Source */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="m-0 text-xs font-bold text-slate-900">Baseline Contract (Required)</p>
+                      <p className="mb-0 text-[11px] text-slate-500">The primary version you want to profile</p>
+                    </div>
+                    <label className="cursor-pointer rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                      Upload .sol
+                      <input
+                        className="sr-only"
+                        type="file"
+                        accept=".sol,text/plain"
+                        onChange={e => loadContractFile("baseline", e)}
+                      />
+                    </label>
+                  </div>
+                  <textarea
+                    value={baselineSource}
+                    onChange={e => setBaselineSource(e.target.value)}
+                    placeholder="Paste a standalone Solidity contract, or upload a .sol file."
+                    rows={7}
+                    spellCheck={false}
+                    className="mt-3 w-full rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                  />
+                  <p className="mb-0 mt-1.5 text-[11px] text-slate-500">
+                    {baselineFileName || `${baselineSource.length} characters loaded`}
+                  </p>
+                </div>
+
+                {/* Revision Source */}
+                <div className="rounded-xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <p className="m-0 text-xs font-bold text-slate-900">Revision Contract (Optional)</p>
+                      <p className="mb-0 text-[11px] text-slate-500">Compare against an optimized version</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {!showRevision && (
+                        <button
+                          type="button"
+                          onClick={() => setShowRevision(true)}
+                          className="rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
+                        >
+                          Enable revision
+                        </button>
+                      )}
+                      {showRevision && (
+                        <label className="cursor-pointer rounded-md border border-slate-200 bg-white px-2.5 py-1 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50">
+                          Upload .sol
+                          <input
+                            className="sr-only"
+                            type="file"
+                            accept=".sol,text/plain"
+                            onChange={e => loadContractFile("revision", e)}
+                          />
+                        </label>
+                      )}
+                    </div>
+                  </div>
+                  {showRevision ? (
+                    <>
+                      <textarea
+                        value={revisionSource}
+                        onChange={e => setRevisionSource(e.target.value)}
+                        placeholder="Paste a revised contract to execute identical calls and compare storage access."
+                        rows={7}
+                        spellCheck={false}
+                        className="mt-3 w-full rounded-lg border border-slate-200 bg-white p-3 font-mono text-xs text-slate-800 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                      />
+                      <p className="mb-0 mt-1.5 text-[11px] text-slate-500">
+                        {revisionFileName || `${revisionSource.length} characters loaded`}
+                      </p>
+                    </>
+                  ) : (
+                    <div className="mt-3 flex h-[164px] flex-col items-center justify-center rounded-lg border border-dashed border-slate-200 bg-white p-4 text-center">
+                      <p className="text-xs text-slate-500">No revision enabled.</p>
+                      <button
+                        type="button"
+                        onClick={() => setShowRevision(true)}
+                        className="mt-2 text-xs font-semibold text-blue-700 underline"
+                      >
+                        Add revision source to compare side-by-side
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Deployment Settings */}
+              <div className="mt-5 grid gap-4 lg:grid-cols-[180px_0.6fr_1.4fr_auto] lg:items-end">
+                <label className="block text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Contract Name
+                  <input
+                    className="mt-1.5 block h-10 w-full rounded-lg border border-slate-200 bg-white px-3 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={contractName}
+                    onChange={e => setContractName(e.target.value)}
+                    placeholder="Counter"
+                    required
+                  />
+                </label>
+                <label className="block text-xs font-medium uppercase tracking-wider text-slate-500">
+                  Constructor Args (JSON)
+                  <input
+                    className="mt-1.5 block h-10 w-full rounded-lg border border-slate-200 bg-white px-3 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={constructorArgs}
+                    onChange={e => setConstructorArgs(e.target.value)}
+                  />
+                </label>
+                <label className="block text-xs font-medium uppercase tracking-wider text-slate-500">
+                  <span className="flex items-center justify-between">
+                    Transaction Manifest (JSON)
+                    <button
+                      type="button"
+                      onClick={generateCallManifest}
+                      className="text-[11px] font-semibold normal-case text-blue-700 underline hover:text-blue-900"
+                    >
+                      Generate from source
+                    </button>
+                  </span>
+                  <textarea
+                    className="mt-1.5 block h-16 w-full resize-y rounded-lg border border-slate-200 bg-white px-3 py-2 font-mono text-xs text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
+                    value={callManifest}
+                    onChange={e => setCallManifest(e.target.value)}
+                    placeholder='[{"function": "method(uint256)", "args": [1], "caller": 0, "repeat": 2}]'
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isActive}
+                  className="h-10 rounded-lg bg-blue-700 px-5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800 disabled:opacity-50"
+                >
+                  {isSubmitting || isActive ? "Profiling…" : showRevision ? "Profile + Compare" : "Compile + Profile"}
+                </button>
+              </div>
+              <p className="mb-0 mt-2 text-[11px] text-slate-500">{manifestHint}</p>
+            </form>
+
+            {/* Built-in Reference Fixtures Form */}
+            <details className="mt-5 border-t border-slate-100 pt-4">
+              <summary className="cursor-pointer text-xs font-bold text-slate-600 hover:text-slate-900">
+                Or run built-in deterministic scenarios (Reference Fixture)
+              </summary>
+              <form
+                onSubmit={handleFixtureSubmit}
+                className="mt-3 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-4 md:grid-cols-[140px_160px_1fr_auto] md:items-end"
+              >
+                <label className="block text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  Batch Size
+                  <input
+                    type="number"
+                    min={1}
+                    max={100}
+                    value={batchSize}
+                    onChange={e => setBatchSize(e.target.value)}
+                    className="mt-1 block h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-900"
+                  />
+                </label>
+                <label className="block text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  Controlled Accounts
+                  <input
+                    type="number"
+                    min={2}
+                    max={20}
+                    value={accountCount}
+                    onChange={e => setAccountCount(e.target.value)}
+                    className="mt-1 block h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 text-xs text-slate-900"
+                  />
+                </label>
+                <label className="block text-[11px] font-medium uppercase tracking-wider text-slate-500">
+                  Revision Artifact
+                  <input
+                    type="text"
+                    value={revisionArtifact}
+                    onChange={e => setRevisionArtifact(e.target.value)}
+                    className="mt-1 block h-9 w-full rounded-md border border-slate-200 bg-white px-2.5 font-mono text-xs text-slate-900"
+                  />
+                </label>
+                <button
+                  type="submit"
+                  disabled={isSubmitting || isActive}
+                  className="h-9 rounded-md bg-slate-800 px-4 text-xs font-semibold text-white hover:bg-slate-900 disabled:opacity-50"
+                >
+                  {isSubmitting || isActive ? "Profiling…" : "Run Fixture"}
+                </button>
+              </form>
+            </details>
+          </section>
+        )}
+
+        {/* Global Progress & Notification Bar */}
+        {(job || error) && (
+          <section
+            aria-live="polite"
+            className="mt-5 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-slate-200 bg-white px-5 py-3 shadow-sm"
+          >
+            <div className="flex items-center gap-3 text-sm">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${
+                  job?.status === "completed" ? "bg-emerald-500" : error ? "bg-rose-500" : "animate-pulse bg-blue-600"
+                }`}
+              />
+              <span className="text-slate-500">Status:</span>
+              <strong
+                className={job?.status === "completed" ? "text-emerald-700" : error ? "text-rose-700" : "text-blue-700"}
+              >
+                {error
+                  ? "Execution issue"
+                  : job?.status === "running"
+                    ? "Tracing EVM storage accesses"
+                    : (job?.status ?? "Queued")}
+              </strong>
+              {job && <code className="hidden font-mono text-xs text-slate-400 sm:inline">{job.id}</code>}
+            </div>
+            <div className="flex items-center gap-3">
+              {error && isActive && (
+                <button
+                  onClick={handleReconnect}
+                  disabled={isReconnecting}
+                  className="text-xs font-semibold text-blue-700 underline"
+                >
+                  {isReconnecting ? "Reconnecting…" : "Reconnect to Job"}
+                </button>
+              )}
+              {browserResultRestored && job?.status === "completed" && (
+                <button
+                  onClick={clearSavedResult}
+                  className="text-xs font-semibold text-slate-500 underline hover:text-slate-900"
+                >
+                  Clear Saved Result
+                </button>
+              )}
+            </div>
+          </section>
+        )}
+
+        {/* Error Notification */}
+        {error && (
+          <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-800 shadow-sm">
+            {error}
+          </div>
+        )}
+
+        {/* Empty State Prompt */}
+        {!baseline && !isActive && !error && (
+          <section className="mt-8 rounded-2xl border border-dashed border-slate-300 bg-white p-12 text-center shadow-sm">
+            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-2xl bg-blue-50 text-blue-700">
+              <svg className="h-7 w-7" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+              </svg>
+            </div>
+            <h2 className="mt-4 text-2xl font-bold tracking-tight text-slate-950">No Profile Workload Executed Yet</h2>
+            <p className="mx-auto mt-2 max-w-md text-sm text-slate-600">
+              Configure and run a Solidity workload to explore execution traces, MIP-8 storage locality, and directed
+              concurrency conflict graphs.
+            </p>
+            <div className="mt-6 flex justify-center gap-3">
+              <button
+                type="button"
+                onClick={() => setIsSetupOpen(true)}
+                className="rounded-xl bg-blue-700 px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition hover:bg-blue-800"
+              >
+                Open Workload Setup
+              </button>
+            </div>
+          </section>
+        )}
+
+        {/* Profile Workbench Main Area */}
+        {baseline && (
+          <div className="mt-6 space-y-6">
+            {/* Synchronized PEV Filter Ribbon */}
+            {(selectedCallIndex !== null || selectedSlot !== null) && (
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-blue-200 bg-blue-50/70 px-4 py-2.5 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="font-semibold text-blue-900">Synchronized PEV Filter:</span>
+                  {selectedCallIndex !== null && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-blue-100 px-2.5 py-0.5 font-medium text-blue-800">
+                      Call T{selectedCallIndex}
+                      <button type="button" onClick={() => setSelectedCallIndex(null)} className="hover:text-blue-950">
+                        ✕
+                      </button>
+                    </span>
+                  )}
+                  {selectedSlot !== null && (
+                    <span className="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-0.5 font-medium text-amber-800">
+                      Slot {shortHash(selectedSlot)}
+                      <button type="button" onClick={() => setSelectedSlot(null)} className="hover:text-amber-950">
+                        ✕
+                      </button>
+                    </span>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={handleClearFilters}
+                  className="font-semibold text-blue-700 underline hover:text-blue-900"
+                >
+                  Clear all filters
+                </button>
+              </div>
+            )}
+
+            {/* 6 Dedicated Workbench Perspectives (Lenses) */}
+            <div className="border-b border-slate-200">
+              <nav className="-mb-px flex space-x-2 overflow-x-auto" aria-label="Workbench Lenses">
+                {[
+                  { id: "overview" as LensTab, label: "Overview", icon: "📊" },
+                  {
+                    id: "execution" as LensTab,
+                    label: "Execution Timeline",
+                    icon: "⏱",
+                    badge: `${baseline.calls.length} calls`,
+                  },
+                  {
+                    id: "storage" as LensTab,
+                    label: "Storage & MIP-8",
+                    icon: "💾",
+                    badge: `${baselineMip8?.distinctPages ?? 0} pages`,
+                  },
+                  {
+                    id: "dependencies" as LensTab,
+                    label: "Dependencies",
+                    icon: "🔀",
+                    badge: `${baseline.dependencyGraph.edges.length} edges`,
+                  },
+                  {
+                    id: "compare" as LensTab,
+                    label: "Compare",
+                    icon: "⚖️",
+                    badge: comparison ? (comparison.workloadIdentical ? "Identical" : "Diff") : undefined,
+                  },
+                  {
+                    id: "findings" as LensTab,
+                    label: "Findings & Remediation",
+                    icon: "💡",
+                    badge: `${insightsReport?.diagnostics.length ?? 4} rules`,
+                  },
+                ].map(tab => {
+                  const isActiveTab = activeLens === tab.id;
+                  return (
+                    <button
+                      key={tab.id}
+                      onClick={() => {
+                        setActiveLens(tab.id);
+                        if (tab.id === "findings" && !insightsReport) {
+                          runInsightsAnalysis();
+                        }
+                      }}
+                      className={`group inline-flex items-center gap-2 whitespace-nowrap border-b-2 px-4 py-3 text-xs font-bold transition-colors ${
+                        isActiveTab
+                          ? "border-blue-600 text-blue-700"
+                          : "border-transparent text-slate-500 hover:border-slate-300 hover:text-slate-800"
+                      }`}
+                    >
+                      <span>{tab.icon}</span>
+                      <span>{tab.label}</span>
+                      {tab.badge && (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[10px] ${
+                            isActiveTab ? "bg-blue-100 text-blue-800" : "bg-slate-100 text-slate-600"
+                          }`}
+                        >
+                          {tab.badge}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
+              </nav>
+            </div>
+
+            {/* TAB 1: OVERVIEW LENS */}
+            {activeLens === "overview" && (
+              <div className="space-y-6">
+                {/* 4 Headline Metrics Cards */}
+                <section className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <MetricCard
+                    label="Local EVM Gas"
+                    value={formatInteger(baseline.summary.totalGasUsed)}
+                    detail={`Across ${baseline.summary.callCount} calls (${baseline.summary.revertedCalls} reverted)`}
+                    accent="blue"
+                  />
+                  <MetricCard
+                    label="Storage Accesses"
+                    value={formatInteger(totalObservedAccesses)}
+                    detail={`${baseline.traceCoverage} trace coverage (${baseline.calls.filter(c => c.trace.complete).length}/${baseline.calls.length})`}
+                    accent="sky"
+                  />
+                  <MetricCard
+                    label="Conflict Graph"
+                    value={`${baseline.dependencyGraph.edges.length} edges`}
+                    detail={`Modeled depth ${baseline.dependencyGraph.modeledExecutionDepth} · ${baseline.dependencyGraph.hotSlots.length} hot slots`}
+                    accent="teal"
+                  />
+                  <MetricCard
+                    label="MIP-8 Locality"
+                    value={`${baselineMip8?.pageReuseRate ?? 0}% reuse`}
+                    detail={`${baselineMip8?.distinctPages ?? 0} distinct 4 KB pages (${baselineMip8?.warmPageTouches ?? 0} warm reuses)`}
+                    accent="green"
+                  />
+                </section>
+
+                {/* Key Bottlenecks Alert Banner */}
+                {baseline.dependencyGraph.edges.length > 0 && (
+                  <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-5 shadow-sm">
+                    <div className="flex items-start gap-3">
+                      <span className="text-xl">⚠️</span>
+                      <div>
+                        <h3 className="m-0 text-sm font-bold text-amber-950">Storage Access Bottlenecks Detected</h3>
+                        <p className="mb-0 mt-1 text-xs text-amber-800">
+                          Found {baseline.dependencyGraph.edges.length} storage-access conflicts across{" "}
+                          {baseline.dependencyGraph.hotSlots.length} shared slots. Top bottleneck slot:{" "}
+                          <code className="font-mono font-semibold">
+                            {shortHash(baseline.dependencyGraph.hotSlots[0]?.slot ?? "none")}
+                          </code>{" "}
+                          with {baseline.dependencyGraph.hotSlots[0]?.touches ?? 0} touches.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (baseline.dependencyGraph.hotSlots[0]) {
+                            setSelectedSlot(baseline.dependencyGraph.hotSlots[0].slot);
+                          }
+                          setActiveLens("dependencies");
+                        }}
+                        className="rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-semibold text-white shadow-sm hover:bg-amber-700"
+                      >
+                        Inspect in Dependencies →
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (baseline.dependencyGraph.hotSlots[0]) {
+                            setSelectedSlot(baseline.dependencyGraph.hotSlots[0].slot);
+                          }
+                          setActiveLens("storage");
+                        }}
+                        className="rounded-lg border border-amber-300 bg-white px-3.5 py-1.5 text-xs font-semibold text-amber-900 shadow-sm hover:bg-amber-50"
+                      >
+                        Inspect MIP-8 Page →
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Charts Grid: Gas by Scenario & Modeled Execution Waves */}
+                <section className="grid gap-5 xl:grid-cols-[1.55fr_0.95fr]">
+                  <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
+                    <CardContent className="!p-5">
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div>
+                          <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-wider text-blue-700">
+                            Scenario Gas Comparison
+                          </p>
+                          <h2 className="mb-0 mt-1 text-base font-bold text-slate-950">Local Gas by Scenario</h2>
+                        </div>
+                        <p className="m-0 text-xs text-slate-500">
+                          Identical Workload:{" "}
+                          {comparison?.workloadIdentical ? "Verified ✓" : comparison ? "Diff" : "Baseline Only"}
+                        </p>
+                      </div>
+
+                      <ChartContainer config={gasChartConfig} className="mt-4 min-h-[260px] w-full !aspect-auto">
+                        <BarChart
+                          accessibilityLayer
+                          data={scenarioChartData}
+                          margin={{ top: 8, right: 4, left: -18, bottom: 0 }}
+                        >
+                          <CartesianGrid vertical={false} stroke="rgba(0,0,0,0.06)" />
+                          <XAxis
+                            dataKey="scenario"
+                            tickLine={false}
+                            tickMargin={10}
+                            axisLine={false}
+                            tick={{ fill: "#64748b", fontSize: 11 }}
+                          />
+                          <YAxis
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fill: "#64748b", fontSize: 11 }}
+                            tickFormatter={val =>
+                              new Intl.NumberFormat("en-US", { notation: "compact" }).format(Number(val))
+                            }
+                          />
+                          <ChartTooltip
+                            content={
+                              <ChartTooltipContent className="border-slate-200 !bg-white !text-slate-900 shadow-sm" />
+                            }
+                          />
+                          <ChartLegend content={<ChartLegendContent className="text-slate-600" />} />
+                          <Bar dataKey="baseline" fill="var(--color-baseline)" radius={[4, 4, 0, 0]} />
+                          {comparison && <Bar dataKey="revision" fill="var(--color-revision)" radius={[4, 4, 0, 0]} />}
+                        </BarChart>
+                      </ChartContainer>
+                      <p className="mb-0 mt-3 text-xs text-slate-500">
+                        Measured directly from local transaction receipts.
+                      </p>
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
+                    <CardContent className="!p-5">
+                      <div className="flex items-start justify-between">
+                        <div>
+                          <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-wider text-sky-700">
+                            Dependency Model
+                          </p>
+                          <h2 className="mb-0 mt-1 text-base font-bold text-slate-950">Modeled Wave Distribution</h2>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveLens("dependencies")}
+                          className="text-xs font-semibold text-blue-700 underline"
+                        >
+                          View Swimlanes →
+                        </button>
+                      </div>
+
+                      <ChartContainer config={waveChartConfig} className="mt-4 min-h-[180px] w-full !aspect-auto">
+                        <BarChart
+                          accessibilityLayer
+                          data={waveChartData}
+                          margin={{ top: 8, right: 4, left: -18, bottom: 0 }}
+                        >
+                          <CartesianGrid vertical={false} stroke="rgba(0,0,0,0.06)" />
+                          <XAxis
+                            dataKey="wave"
+                            tickLine={false}
+                            tickMargin={10}
+                            axisLine={false}
+                            tick={{ fill: "#64748b", fontSize: 11 }}
+                          />
+                          <YAxis
+                            allowDecimals={false}
+                            tickLine={false}
+                            axisLine={false}
+                            tick={{ fill: "#64748b", fontSize: 11 }}
+                          />
+                          <ChartTooltip
+                            content={
+                              <ChartTooltipContent className="border-slate-200 !bg-white !text-slate-900 shadow-sm" />
+                            }
+                          />
+                          <Bar dataKey="calls" fill="var(--color-calls)" radius={[4, 4, 0, 0]} />
+                        </BarChart>
+                      </ChartContainer>
+
+                      <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-100 pt-3 text-xs">
+                        <div>
+                          <dt className="text-slate-500">Conflict Edges</dt>
+                          <dd className="mt-0.5 font-mono font-bold text-slate-900">
+                            {formatInteger(baseline.dependencyGraph.edges.length)}
+                          </dd>
+                        </div>
+                        <div>
+                          <dt className="text-slate-500">Modeled Depth</dt>
+                          <dd className="mt-0.5 font-mono font-bold text-slate-900">
+                            {baseline.dependencyGraph.modeledExecutionDepth}
+                          </dd>
+                        </div>
+                      </dl>
+                    </CardContent>
+                  </Card>
+                </section>
+
+                {/* Storage Access Intensity Matrix & Quick Actions */}
+                <section className="grid gap-5 xl:grid-cols-[1.1fr_0.9fr]">
+                  <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
+                    <CardContent className="!p-5">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-wider text-amber-700">
+                            Storage Intensity
+                          </p>
+                          <h2 className="mb-0 mt-1 text-base font-bold text-slate-950">Observed Storage Hot Slots</h2>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setActiveLens("storage")}
+                          className="text-xs font-semibold text-blue-700 underline"
+                        >
+                          Open MIP-8 Page Inspector →
+                        </button>
+                      </div>
+
+                      {heatMapSlots.length > 0 ? (
+                        <div className="mt-4">
+                          <div className="grid grid-cols-4 gap-2 sm:grid-cols-8">
+                            {heatMapSlots.map((slot, idx) => {
+                              const intensity = Math.max(0.15, slot.touches / maxTouches);
+                              const isSelected = selectedSlot === slot.slot;
+                              return (
+                                <button
+                                  key={`${slot.slot}-${idx}`}
+                                  type="button"
+                                  onClick={() => handleSelectSlot(slot.slot)}
+                                  title={`Slot: ${slot.slot}\nTouches: ${slot.touches}\nEdges: ${slot.dependencyEdgeCount}`}
+                                  className={`aspect-square rounded-lg border transition duration-150 ${
+                                    isSelected
+                                      ? "border-amber-500 ring-2 ring-amber-400"
+                                      : "border-slate-200 hover:border-amber-400"
+                                  }`}
+                                  style={{
+                                    backgroundColor: `hsla(${278 - intensity * 228}, 88%, ${30 + intensity * 35}%, ${
+                                      0.3 + intensity * 0.7
+                                    })`,
+                                  }}
+                                />
+                              );
+                            })}
+                          </div>
+                          <div className="mt-3 flex items-center justify-between text-[11px] text-slate-500">
+                            <span>Lower touches</span>
+                            <div className="h-2 w-24 rounded-full bg-gradient-to-r from-blue-700 via-sky-500 to-amber-300" />
+                            <span>Higher touches</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="mb-0 mt-4 text-xs text-slate-500">No repeated slots observed.</p>
+                      )}
+                    </CardContent>
+                  </Card>
+
+                  <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
+                    <CardContent className="!p-5">
+                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-wider text-emerald-700">
+                        Remediation & Handoff
+                      </p>
+                      <h2 className="mb-0 mt-1 text-base font-bold text-slate-950">Engineering Workflows</h2>
+                      <div className="mt-4 space-y-2.5">
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-800">1. Inspect Opcode Execution Trace</span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveLens("execution")}
+                              className="text-xs font-semibold text-blue-700 underline"
+                            >
+                              Open Timeline →
+                            </button>
+                          </div>
+                          <p className="mb-0 mt-1 text-[11px] text-slate-500">
+                            Inspect each SLOAD/SSTORE opcode, depth, and program counter across calls.
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-800">
+                              2. Inspect MIP-8 128-Slot Page Grid
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveLens("storage")}
+                              className="text-xs font-semibold text-blue-700 underline"
+                            >
+                              Open Storage →
+                            </button>
+                          </div>
+                          <p className="mb-0 mt-1 text-[11px] text-slate-500">
+                            See how slots cluster into 4 KB physical pages and calculate cold vs warm gas.
+                          </p>
+                        </div>
+
+                        <div className="rounded-xl border border-slate-100 bg-slate-50 p-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-bold text-slate-800">3. Diagnostic Findings & AI Prompt</span>
+                            <button
+                              type="button"
+                              onClick={() => setActiveLens("findings")}
+                              className="text-xs font-semibold text-blue-700 underline"
+                            >
+                              Open Findings →
+                            </button>
+                          </div>
+                          <p className="mb-0 mt-1 text-[11px] text-slate-500">
+                            Review evidence-bound remediation experiments and copy the full prompt for your AI coder.
+                          </p>
+                        </div>
+                      </div>
+                    </CardContent>
+                  </Card>
+                </section>
+              </div>
+            )}
+
+            {/* TAB 2: EXECUTION TIMELINE LENS */}
+            {activeLens === "execution" && (
+              <ExecutionTimeline
+                calls={baseline.calls}
+                selectedCallIndex={selectedCallIndex}
+                selectedSlot={selectedSlot}
+                onSelectCall={handleSelectCall}
+                onSelectSlot={handleSelectSlot}
+              />
+            )}
+
+            {/* TAB 3: STORAGE & MIP-8 LENS */}
+            {activeLens === "storage" && baselineMip8 && (
+              <StorageLens
+                mip8={baselineMip8}
+                hotSlots={baseline.dependencyGraph.hotSlots}
+                selectedSlot={selectedSlot}
+                onSelectSlot={handleSelectSlot}
+                onSelectCall={idx => {
+                  handleSelectCall(idx);
+                  setActiveLens("execution");
+                }}
+              />
+            )}
+
+            {/* TAB 4: DEPENDENCIES LENS */}
+            {activeLens === "dependencies" && (
+              <DependencyLens
+                nodes={baseline.dependencyGraph.nodes}
+                edges={baseline.dependencyGraph.edges}
+                hotSlots={baseline.dependencyGraph.hotSlots}
+                modeledExecutionDepth={baseline.dependencyGraph.modeledExecutionDepth}
+                selectedCallIndex={selectedCallIndex}
+                selectedSlot={selectedSlot}
+                onSelectCall={handleSelectCall}
+                onSelectSlot={handleSelectSlot}
+              />
+            )}
+
+            {/* TAB 5: COMPARE LENS */}
+            {activeLens === "compare" && (
+              <CompareLens
+                comparison={report.comparison}
+                baselineName={baseline.contract.name}
+                revisionName={report.revision?.contract.name ?? "Revision"}
+                baselineMip8={baselineMip8 ?? undefined}
+                revisionMip8={revisionMip8 ?? undefined}
+              />
+            )}
+
+            {/* TAB 6: FINDINGS & REMEDIATION LENS */}
+            {activeLens === "findings" && (
+              <FindingsLens
+                source={baselineSource || defaultFixtureSource}
+                report={insightsReport}
+                isAnalyzing={isAnalyzingInsights}
+                onRunAnalysis={runInsightsAnalysis}
+              />
+            )}
+          </div>
+        )}
+
+        {/* Monad Testnet Lane & Attestation (Bottom Lane) */}
+        <section className="mt-12 overflow-hidden rounded-2xl border border-slate-900 bg-slate-950 text-white shadow-xl">
+          <div className="grid gap-6 px-6 py-7 lg:grid-cols-[0.8fr_1.2fr] lg:items-center">
             <div>
-              <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.16em] text-blue-300">
-                Monad Testnet lane
+              <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-wider text-blue-300">
+                Monad Testnet Integration
               </p>
-              <h2 className="mb-0 mt-2 text-xl font-semibold tracking-[-0.04em] text-white">
-                Bring your QuickNode endpoint.
-              </h2>
-              <p className="mb-0 mt-2 max-w-md text-sm leading-6 text-slate-400">
-                Check that an RPC URL points at Monad Testnet before using it for the bounded deployment and receipt-verification checkpoint.
+              <h2 className="mb-0 mt-2 text-xl font-bold tracking-tight text-white">Verify RPC & Bounded Deployment</h2>
+              <p className="mb-0 mt-2 max-w-md text-xs leading-5 text-slate-400">
+                Check that your QuickNode endpoint points at Monad Testnet (Chain ID 10143) before deploying and
+                creating cryptographic attestations.
               </p>
-              <div className="mt-4 flex flex-wrap gap-2 text-[11px] font-medium">
-                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">Browser-only check</span>
-                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">Expected: 10143</span>
-                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">Never stored</span>
+              <div className="mt-4 flex flex-wrap gap-2 text-[10px] font-medium">
+                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">
+                  Browser-only check
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">
+                  Expected Chain ID: 10143
+                </span>
+                <span className="rounded-full border border-white/10 bg-white/[0.06] px-2.5 py-1 text-slate-300">
+                  Zero secrets logged
+                </span>
               </div>
             </div>
+
             <div className="rounded-xl border border-white/10 bg-white/[0.05] p-4">
-              <label className="block text-[10px] font-semibold uppercase tracking-[0.15em] text-slate-400">
-                QuickNode Monad Testnet RPC
+              <label className="block text-[10px] font-semibold uppercase tracking-wider text-slate-400">
+                QuickNode Monad Testnet RPC URL
                 <div className="mt-2 flex flex-col gap-2 sm:flex-row">
                   <input
                     aria-label="QuickNode Monad Testnet RPC URL"
                     type="url"
                     value={quickNodeUrl}
-                    onChange={event => setQuickNodeUrl(event.target.value)}
+                    onChange={e => setQuickNodeUrl(e.target.value)}
                     placeholder="https://…monad-testnet.quiknode.pro/…/"
-                    className="h-11 min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 font-mono text-xs normal-case tracking-normal text-white outline-none placeholder:text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
+                    className="h-10 min-w-0 flex-1 rounded-lg border border-white/10 bg-slate-900 px-3 font-mono text-xs text-white outline-none placeholder:text-slate-600 focus:border-blue-400 focus:ring-2 focus:ring-blue-400/20"
                   />
                   <button
                     type="button"
                     onClick={checkQuickNode}
                     disabled={quickNodeCheck.state === "checking"}
-                    className="h-11 shrink-0 rounded-lg bg-white px-4 text-sm font-semibold text-slate-950 transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60"
+                    className="h-10 shrink-0 rounded-lg bg-white px-4 text-xs font-bold text-slate-950 transition hover:bg-blue-50 disabled:opacity-60"
                   >
                     {quickNodeCheck.state === "checking" ? "Checking…" : "Test RPC"}
                   </button>
                 </div>
               </label>
+
               <div
                 className={`mt-3 rounded-lg px-3 py-2 text-xs leading-5 ${
                   quickNodeCheck.state === "connected"
@@ -636,816 +1570,24 @@ const MProfilerDashboard = () => {
               >
                 {quickNodeCheck.detail}
               </div>
-              <p className="mb-0 mt-3 text-[11px] leading-5 text-slate-500">
-                This only calls <code>eth_chainId</code> from your browser. The URL is not saved, uploaded, or sent to the profiler worker.
-              </p>
             </div>
           </div>
         </section>
 
-        <section
-          aria-label="MProfiler workflow"
-          className="mt-5 grid gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm sm:grid-cols-4"
-        >
-          {[
-            { step: "01", label: "Profile", detail: "Compile and trace your contract", active: true },
-            { step: "02", label: "Diagnose", detail: "Review evidence-backed findings", active: Boolean(baseline) },
-            { step: "03", label: "Improve", detail: "Copy the coding-agent handoff", active: false },
-            {
-              step: "04",
-              label: "Compare",
-              detail: "Profile a revision with the same calls",
-              active: Boolean(report?.comparison),
-            },
-          ].map(item => (
-            <div
-              key={item.step}
-              className={`rounded-lg border px-3 py-2.5 ${item.active ? "border-blue-200 bg-blue-50" : "border-slate-100 bg-slate-50"}`}
-            >
-              <p
-                className={`m-0 text-[10px] font-semibold tracking-[0.14em] ${item.active ? "text-blue-700" : "text-slate-400"}`}
-              >
-                {item.step} · {item.label}
-              </p>
-              <p className="mb-0 mt-1 text-xs text-slate-500">{item.detail}</p>
-            </div>
-          ))}
-        </section>
-
-        <form onSubmit={handleContractSubmit} className="mt-5 rounded-xl border border-blue-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-wrap items-start justify-between gap-4">
-            <div>
-              <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.17em] text-blue-700">
-                Step 1 · profile your contract
-              </p>
-              <h2 className="mb-0 mt-2 text-xl font-semibold tracking-[-0.035em] text-slate-950">
-                Start with one contract
-              </h2>
-              <p className="mb-0 mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-                Upload one Solidity file, deploy it in a disposable local Hardhat EVM, and run the calls that matter for
-                your contract. You will see measured gas, traces, storage access evidence, hot slots, and graph
-                properties before deciding whether a revision is worth profiling.
-              </p>
-            </div>
-            <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1.5 text-xs font-medium text-sky-800">
-              Local execution only
-            </span>
-          </div>
-
-          <div className="mt-5">
-            <section className="rounded-lg border border-slate-200 bg-slate-50 p-4">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="m-0 text-sm font-semibold text-slate-900">Baseline contract</p>
-                  <p className="mb-0 mt-1 text-xs text-slate-500">Required · the version you want to measure first</p>
-                </div>
-                <label className="cursor-pointer rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                  Upload .sol
-                  <input
-                    className="sr-only"
-                    type="file"
-                    accept=".sol,text/plain"
-                    onChange={event => loadContractFile("baseline", event)}
-                  />
-                </label>
-              </div>
-              <textarea
-                aria-label="Baseline Solidity source"
-                value={baselineSource}
-                onChange={event => setBaselineSource(event.target.value)}
-                placeholder="Paste a standalone Solidity contract, or upload a .sol file."
-                spellCheck={false}
-                className="mt-3 h-44 w-full resize-y rounded-md border border-slate-200 bg-white p-3 font-mono text-xs leading-5 text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-              />
-              <p className="mb-0 mt-2 text-xs text-slate-500">
-                {baselineFileName || `${baselineSource.length} characters loaded`}
-              </p>
-            </section>
-            {showRevision && (
-              <section id="revision-source" className="mt-4 rounded-lg border border-slate-200 bg-slate-50 p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="m-0 text-sm font-semibold text-slate-900">Revision contract</p>
-                    <p className="mb-0 mt-1 text-xs text-slate-500">Optional · compare under identical inputs</p>
-                  </div>
-                  <label className="cursor-pointer rounded-md border border-slate-200 bg-white px-3 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-100">
-                    Upload .sol
-                    <input
-                      className="sr-only"
-                      type="file"
-                      accept=".sol,text/plain"
-                      onChange={event => loadContractFile("revision", event)}
-                    />
-                  </label>
-                </div>
-                <textarea
-                  aria-label="Revision Solidity source"
-                  value={revisionSource}
-                  onChange={event => setRevisionSource(event.target.value)}
-                  placeholder="Paste a compatible revision to generate a measured comparison."
-                  spellCheck={false}
-                  className="mt-3 h-44 w-full resize-y rounded-md border border-slate-200 bg-white p-3 font-mono text-xs leading-5 text-slate-700 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                />
-                <p className="mb-0 mt-2 text-xs text-slate-500">
-                  {revisionFileName || `${revisionSource.length} characters loaded`}
-                </p>
-              </section>
-            )}
-          </div>
-
-          <div className="mt-4 grid gap-4 lg:grid-cols-[180px_0.6fr_1.4fr_auto] lg:items-end">
-            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Contract name
-              <input
-                aria-label="Solidity contract name"
-                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                value={contractName}
-                onChange={event => setContractName(event.target.value)}
-                placeholder="Counter"
-                required
-              />
-            </label>
-            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Constructor args (JSON)
-              <input
-                aria-label="Constructor arguments JSON"
-                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                value={constructorArgs}
-                onChange={event => setConstructorArgs(event.target.value)}
-              />
-            </label>
-            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              <span className="flex items-center justify-between gap-3">
-                Transaction manifest (JSON)
-                <button
-                  type="button"
-                  onClick={generateCallManifest}
-                  className="normal-case tracking-normal text-blue-700 underline underline-offset-4 hover:text-blue-900"
-                >
-                  Generate from source
-                </button>
-              </span>
-              <textarea
-                aria-label="Transaction manifest JSON"
-                className="mt-2 block h-24 w-full resize-y rounded-md border border-slate-200 bg-white px-3 py-2 font-mono text-xs leading-5 text-slate-900 outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                value={callManifest}
-                onChange={event => setCallManifest(event.target.value)}
-                placeholder={'[\n  { "function": "yourMethod(uint256)", "args": [1], "caller": 0, "repeat": 2 }\n]'}
-              />
-            </label>
-            <button
-              className="h-11 rounded-md bg-blue-700 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
-              type="submit"
-              disabled={isSubmitting || isActive}
-            >
-              {isSubmitting || isActive ? "Profiling…" : showRevision ? "Profile + compare" : "Compile + profile"}
-            </button>
-          </div>
-          <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
-            {manifestHint} A call is{" "}
-            <code>{'{ "function": "yourMethod(uint256)", "args": [1], "caller": 0, "repeat": 2 }'}</code>. Only
-            state-changing calls produce receipts and storage traces.
-          </p>
-        </form>
-
-        <details className="mt-8 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-          <summary className="cursor-pointer text-sm font-semibold text-slate-600 marker:text-blue-600">
-            Reference fixture demo (optional)
-          </summary>
-          <p className="mb-0 mt-2 text-xs leading-5 text-slate-500">
-            This runs MProfiler&apos;s built-in five-scenario fixture. Use the contract upload flow above for your own
-            Solidity source.
-          </p>
-          <form
-            onSubmit={handleSubmit}
-            className="mt-5 grid gap-4 rounded-xl border border-slate-200 bg-white p-5 shadow-sm md:grid-cols-[150px_170px_minmax(220px,1fr)_auto] md:items-end"
-          >
-            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Batch size
-              <input
-                aria-label="Batch size per scenario"
-                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                type="number"
-                min={1}
-                max={100}
-                step={1}
-                required
-                value={batchSize}
-                onChange={event => setBatchSize(event.target.value)}
-              />
-            </label>
-            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Controlled accounts
-              <input
-                aria-label="Controlled account count"
-                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 text-base text-slate-900 outline-none transition focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                type="number"
-                min={2}
-                max={20}
-                step={1}
-                required
-                value={accountCount}
-                onChange={event => setAccountCount(event.target.value)}
-              />
-            </label>
-            <label className="block text-xs font-medium uppercase tracking-[0.12em] text-slate-500">
-              Revision artifact <span className="normal-case tracking-normal text-slate-400">(optional)</span>
-              <input
-                aria-label="Revision contract artifact"
-                className="mt-2 block h-11 w-full rounded-md border border-slate-200 bg-white px-3 font-mono text-sm text-slate-900 outline-none transition placeholder:text-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-100"
-                type="text"
-                maxLength={64}
-                placeholder="ProfileWorkloadsRevision"
-                value={revisionArtifact}
-                onChange={event => setRevisionArtifact(event.target.value)}
-              />
-            </label>
-            <button
-              className="h-11 rounded-md bg-blue-700 px-6 text-sm font-semibold text-white shadow-sm transition hover:bg-blue-800 focus:outline-none focus:ring-2 focus:ring-blue-300 focus:ring-offset-2 disabled:cursor-wait disabled:opacity-60"
-              type="submit"
-              disabled={isSubmitting || isActive}
-            >
-              {isSubmitting || isActive ? "Profiling…" : "Run local profile"}
-            </button>
-          </form>
-        </details>
-        {(job || error) && (
-          <section
-            aria-live="polite"
-            className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3 shadow-sm"
-          >
-            <div className="flex items-center gap-3 text-sm">
-              <span
-                className={`h-2.5 w-2.5 rounded-full ${job?.status === "completed" ? "bg-emerald-500" : error ? "bg-rose-500" : "animate-pulse bg-blue-600"}`}
-              />
-              <span className="text-slate-500">Status</span>
-              <strong
-                className={job?.status === "completed" ? "text-emerald-700" : error ? "text-rose-700" : "text-blue-700"}
-              >
-                {error
-                  ? "Needs attention"
-                  : job?.status === "running"
-                    ? "Tracing local calls"
-                    : (job?.status ?? "Queued")}
-              </strong>
-              {job && <code className="hidden text-xs text-slate-400 sm:inline">{job.id}</code>}
-            </div>
-            {error && isActive && (
-              <button
-                className="text-sm font-semibold text-blue-700 underline underline-offset-4 disabled:opacity-50"
-                onClick={handleReconnect}
-                disabled={isReconnecting}
-                type="button"
-              >
-                {isReconnecting ? "Reconnecting…" : "Reconnect to job"}
-              </button>
-            )}
-            {browserResultRestored && job?.status === "completed" && (
-              <button
-                className="text-sm font-semibold text-slate-600 underline underline-offset-4 hover:text-slate-950"
-                onClick={clearSavedResult}
-                type="button"
-              >
-                Clear saved result
-              </button>
-            )}
-          </section>
-        )}
-        {browserResultRestored && baseline && (
-          <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800">
-            Restored the completed profile from this browser. Its report remains available here, in Comparison, and in
-            Insights after navigation or refresh.
-          </p>
-        )}
-        {error && (
-          <div
-            role="alert"
-            className="mt-4 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm leading-6 text-rose-800"
-          >
-            {error}
-          </div>
-        )}
-        {isActive && !error && (
-          <p className="mt-4 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm leading-6 text-sky-800">
-            The worker runs each scenario sequentially and captures execution traces. The report will not infer
-            throughput or parallel execution.
-          </p>
-        )}
-
-        {!baseline && !isActive && !error && (
-          <section className="mt-8 rounded-xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm">
-            <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">Step 1 · profile</p>
-            <h2 className="mt-3 text-xl font-semibold tracking-[-0.03em] text-slate-950">
-              Run the five deterministic workloads
-            </h2>
-            <p className="mx-auto mb-0 mt-3 max-w-xl text-sm leading-6 text-slate-600">
-              The result view will populate with actual receipt gas, trace coverage, observed EVM slots, and dependency
-              evidence from your local run.
-            </p>
-            <div className="mx-auto mt-6 flex max-w-3xl flex-wrap justify-center gap-2">
-              {Object.values(scenarioLabels).map(label => (
-                <span
-                  key={label}
-                  className="rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600"
-                >
-                  {label}
-                </span>
-              ))}
-            </div>
-          </section>
-        )}
-
+        {/* Attestation & Testnet Deployment Section */}
         {baseline && (
-          <>
-            {job?.status === "completed" && (
-              <section className="mt-5 rounded-xl border border-blue-200 bg-blue-50 p-5">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <p className="m-0 text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-700">
-                      Profile complete · continue the workflow
-                    </p>
-                    <p className="mb-0 mt-1 text-sm text-slate-600">
-                      Your report and source are saved in this browser. Review the diagnostics first, copy the
-                      coding-agent handoff, then return here with a revised file when you are ready.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    <Link
-                      href={`/insights?job=${job.id}`}
-                      className="rounded-md bg-blue-700 px-3 py-2 text-sm font-semibold text-white hover:bg-blue-800"
-                    >
-                      1. Review diagnostics + copy handoff
-                    </Link>
-                    <button
-                      type="button"
-                      onClick={revealRevision}
-                      className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
-                    >
-                      2. Add revision for comparison
-                    </button>
-                  </div>
-                </div>
-              </section>
-            )}
-            <section id="attestation" className="mt-5 grid gap-4 xl:grid-cols-2">
-              <TestnetDeploymentCard />
-              <AttestationCard report={report} />
-            </section>
-            {comparison && !comparison.workloadIdentical && (
-              <p
-                role="alert"
-                className="mt-5 rounded-lg border border-amber-300/35 bg-amber-400/[0.09] px-4 py-3 text-sm text-amber-100"
-              >
-                The report says the baseline and revision workloads differ. Treat the comparison as invalid.
-              </p>
-            )}
-            <section aria-label="Measured report summary" className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-              <MetricCard
-                label="Local gas"
-                value={formatInteger(baseline.summary.totalGasUsed)}
-                detail="Receipt gas across baseline calls"
-                accent="blue"
-              />
-              <MetricCard
-                label="Calls completed"
-                value={`${baseline.summary.successfulCalls}/${baseline.summary.callCount}`}
-                detail={`${baseline.summary.revertedCalls} reverted`}
-                accent="green"
-              />
-              <MetricCard
-                label="Observed accesses"
-                value={formatInteger(totalObservedAccesses)}
-                detail="Recorded SLOAD and SSTORE steps"
-                accent="blue"
-              />
-              <MetricCard
-                label="Derived edges"
-                value={formatInteger(baseline.dependencyGraph.edges.length)}
-                detail={`Dependency depth ${baseline.dependencyGraph.modeledExecutionDepth}`}
-                accent="teal"
-              />
-              <MetricCard
-                label="Hot EVM slots"
-                value={formatInteger(baseline.dependencyGraph.hotSlots.length)}
-                detail={`${baseline.traceCoverage} trace coverage`}
-                accent="amber"
-              />
-            </section>
-
-            <section className="mt-4 grid gap-4 xl:grid-cols-[1.55fr_0.95fr]">
-              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
-                <CardContent className="!p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-700">
-                        Local gas by scenario
-                      </p>
-                      <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Baseline versus revision</h2>
-                    </div>
-                    <p className="m-0 text-xs leading-5 text-slate-500">
-                      Identical generated inputs:{" "}
-                      {comparison?.workloadIdentical ? "yes" : comparison ? "no" : "not compared"}
-                    </p>
-                  </div>
-                  <ChartContainer config={gasChartConfig} className="mt-5 min-h-[280px] w-full !aspect-auto">
-                    <BarChart
-                      accessibilityLayer
-                      data={scenarioChartData}
-                      margin={{ top: 8, right: 4, left: -18, bottom: 0 }}
-                    >
-                      <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.09)" />
-                      <XAxis
-                        dataKey="scenario"
-                        tickLine={false}
-                        tickMargin={10}
-                        axisLine={false}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                      />
-                      <YAxis
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                        tickFormatter={value =>
-                          new Intl.NumberFormat("en-US", { notation: "compact" }).format(Number(value))
-                        }
-                      />
-                      <ChartTooltip
-                        cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                        content={
-                          <ChartTooltipContent className="border-slate-200 !bg-white !text-slate-900 shadow-sm" />
-                        }
-                      />
-                      <ChartLegend content={<ChartLegendContent className="text-slate-600" />} />
-                      <Bar dataKey="baseline" fill="var(--color-baseline)" radius={[4, 4, 0, 0]} />
-                      {comparison && <Bar dataKey="revision" fill="var(--color-revision)" radius={[4, 4, 0, 0]} />}
-                    </BarChart>
-                  </ChartContainer>
-                  <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
-                    Measured from local transaction receipts. A gas delta does not establish functional equivalence or
-                    an optimization claim by itself.
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
-                <CardContent className="!p-5">
-                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-300">
-                    Dependency model
-                  </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Observed graph waves</h2>
-                  <ChartContainer config={waveChartConfig} className="mt-4 min-h-[190px] w-full !aspect-auto">
-                    <BarChart
-                      accessibilityLayer
-                      data={waveChartData}
-                      margin={{ top: 8, right: 4, left: -18, bottom: 0 }}
-                    >
-                      <CartesianGrid vertical={false} stroke="rgba(255,255,255,0.09)" />
-                      <XAxis
-                        dataKey="wave"
-                        tickLine={false}
-                        tickMargin={10}
-                        axisLine={false}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                      />
-                      <YAxis
-                        allowDecimals={false}
-                        tickLine={false}
-                        axisLine={false}
-                        tick={{ fill: "#64748b", fontSize: 11 }}
-                      />
-                      <ChartTooltip
-                        cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                        content={
-                          <ChartTooltipContent className="border-slate-200 !bg-white !text-slate-900 shadow-sm" />
-                        }
-                      />
-                      <Bar dataKey="calls" fill="var(--color-calls)" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ChartContainer>
-                  <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-slate-200 pt-4 text-sm">
-                    <div>
-                      <dt className="text-[#88879a]">Edges</dt>
-                      <dd className="mt-1 font-mono text-slate-950">
-                        {formatInteger(baseline.dependencyGraph.edges.length)}
-                      </dd>
-                    </div>
-                    <div>
-                      <dt className="text-[#88879a]">Model depth</dt>
-                      <dd className="mt-1 font-mono text-slate-950">
-                        {baseline.dependencyGraph.modeledExecutionDepth}
-                      </dd>
-                    </div>
-                  </dl>
-                  <p className="mb-0 mt-4 text-xs leading-5 text-slate-500">
-                    Waves are computed from observed storage dependencies in this sequential local run.
-                  </p>
-                </CardContent>
-              </Card>
-            </section>
-
-            <section className="mt-4 grid gap-4 xl:grid-cols-[1.18fr_0.82fr]">
-              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
-                <CardContent className="!p-5">
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div>
-                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-sky-700">
-                        Observed EVM slots
-                      </p>
-                      <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Hot-slot access evidence</h2>
-                    </div>
-                    <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-xs text-sky-800">
-                      Trace backed
-                    </span>
-                  </div>
-                  {slotChartData.length > 0 ? (
-                    <ChartContainer config={slotChartConfig} className="mt-5 min-h-[265px] w-full !aspect-auto">
-                      <BarChart
-                        accessibilityLayer
-                        data={slotChartData}
-                        layout="vertical"
-                        margin={{ top: 0, right: 4, left: 0, bottom: 0 }}
-                      >
-                        <CartesianGrid horizontal={false} stroke="rgba(255,255,255,0.09)" />
-                        <XAxis
-                          type="number"
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fill: "#64748b", fontSize: 11 }}
-                          allowDecimals={false}
-                        />
-                        <YAxis
-                          dataKey="label"
-                          type="category"
-                          width={112}
-                          tickLine={false}
-                          axisLine={false}
-                          tick={{ fill: "#b8b6c5", fontSize: 10 }}
-                        />
-                        <ChartTooltip
-                          cursor={{ fill: "rgba(255,255,255,0.05)" }}
-                          content={
-                            <ChartTooltipContent
-                              className="border-slate-200 !bg-white !text-slate-900 shadow-sm"
-                              labelKey="scenario"
-                            />
-                          }
-                        />
-                        <ChartLegend content={<ChartLegendContent className="text-slate-600" />} />
-                        <Bar dataKey="touches" fill="var(--color-touches)" radius={[0, 4, 4, 0]} />
-                        <Bar dataKey="edges" fill="var(--color-edges)" radius={[0, 4, 4, 0]} />
-                      </BarChart>
-                    </ChartContainer>
-                  ) : (
-                    <p className="mb-0 mt-5 rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-                      No repeated slot accesses were observed for this workload.
-                    </p>
-                  )}
-                  <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
-                    Slots are EVM storage keys from SLOAD/SSTORE traces. They are not physical Monad storage pages.
-                  </p>
-                </CardContent>
-              </Card>
-              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
-                <CardContent className="!p-5">
-                      <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-amber-700">
-                    Slot intensity
-                  </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Observed access matrix</h2>
-                  {heatMapSlots.length > 0 ? (
-                    <div className="mt-5">
-                      <div
-                        className="grid grid-cols-5 gap-2 sm:grid-cols-8"
-                        aria-label="Observed storage-slot intensity matrix"
-                      >
-                        {heatMapSlots.map((slot, index) => {
-                          const intensity = Math.max(0.14, slot.touches / maxTouches);
-                          const isActive =
-                            activeMatrixSlot?.slot === slot.slot && activeMatrixSlot?.scenarioId === slot.scenarioId;
-                          return (
-                            <button
-                              key={`${slot.scenarioId}-${slot.contractAddress}-${slot.slot}`}
-                              type="button"
-                              title={`${shortScenarioName(slot.scenarioId)} · ${slot.touches} observed accesses · ${slot.callCount} calls touching this slot`}
-                              aria-label={`Storage slot ${index + 1}: ${shortScenarioName(slot.scenarioId)}, ${slot.touches} observed accesses, ${slot.callCount} calls, ${slot.dependencyEdgeCount} derived edges`}
-                              onMouseEnter={() => setActiveMatrixSlot(slot)}
-                              onFocus={() => setActiveMatrixSlot(slot)}
-                              onClick={() => setActiveMatrixSlot(slot)}
-                              className={`aspect-square rounded-md border transition duration-150 focus:outline-none focus:ring-2 focus:ring-amber-200/80 ${isActive ? "border-amber-100 scale-[1.06]" : "border-slate-200 hover:border-amber-300 hover:scale-[1.04]"}`}
-                              style={{
-                                backgroundColor: `hsla(${278 - intensity * 228}, 88%, ${20 + intensity * 40}%, ${0.35 + intensity * 0.6})`,
-                                boxShadow: intensity > 0.75 ? "0 0 18px rgba(251, 191, 36, 0.28)" : undefined,
-                              }}
-                            >
-                              <span className="sr-only">{shortHash(slot.slot)}</span>
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <div className="mt-4 flex items-center justify-between gap-3 text-[11px] text-slate-500">
-                        <span>Lower observed intensity</span>
-                        <div className="h-2 w-24 rounded-full bg-gradient-to-r from-blue-700 via-sky-500 to-amber-300" />
-                        <span>Higher observed intensity</span>
-                      </div>
-                      {(() => {
-                        const slot = activeMatrixSlot ?? heatMapSlots[0];
-                        return (
-                          <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-slate-700">
-                            <p className="m-0 font-mono font-semibold text-amber-900">
-                              {shortHash(slot.slot)} · {shortScenarioName(slot.scenarioId)}
-                            </p>
-                            <p className="mb-0 mt-1">
-                              {slot.touches} observed SLOAD/SSTORE accesses across {slot.callCount} calls;{" "}
-                              {slot.dependencyEdgeCount} derived dependency edges. Full EVM slot:{" "}
-                              <code className="break-all text-slate-800">{slot.slot}</code>
-                            </p>
-                          </div>
-                        );
-                      })()}
-                    </div>
-                  ) : (
-                    <p className="mb-0 mt-5 rounded-md border border-slate-200 bg-slate-50 px-3 py-4 text-sm text-slate-600">
-                      No repeated slots were found in the trace evidence.
-                    </p>
-                  )}
-                  <p className="mb-0 mt-5 border-t border-slate-200 pt-4 text-xs leading-5 text-slate-500">
-                    Each block is one observed hot EVM storage slot. Color is relative only to observed touches in this
-                    report; hover, focus, or tap a block for its evidence.
-                  </p>
-                </CardContent>
-              </Card>
-            </section>
-
-            <section className="mt-4 grid gap-4 xl:grid-cols-[1.16fr_0.84fr]">
-              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
-                <CardContent className="!p-5">
-                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-blue-700">
-                    Comparison ledger
-                  </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Scenario measurements</h2>
-                  <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200">
-                    <table className="w-full min-w-[760px] border-collapse text-left text-sm">
-                      <thead className="bg-slate-50 text-xs uppercase tracking-[0.11em] text-slate-600">
-                        <tr>
-                          <th className="px-4 py-3 font-medium">Scenario</th>
-                          <th className="px-4 py-3 text-right font-medium">Calls</th>
-                          <th className="px-4 py-3 text-right font-medium">Baseline gas</th>
-                          {comparison && <th className="px-4 py-3 text-right font-medium">Revision gas</th>}
-                          {comparison && <th className="px-4 py-3 text-right font-medium">Gas Δ</th>}
-                          <th className="px-4 py-3 text-right font-medium">Edges</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {baseline.workload.scenarios.map(scenarioId => {
-                          const row = comparisonByScenario.get(scenarioId);
-                          const edges = baseline.dependencyGraph.edges.filter(
-                            edge => edge.scenarioId === scenarioId,
-                          ).length;
-                          return (
-                            <tr key={scenarioId} className="border-t border-slate-100">
-                              <th scope="row" className="px-4 py-3 font-medium text-slate-800">
-                                {scenarioName(scenarioId)}
-                              </th>
-                              <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
-                                {formatInteger(
-                                  row?.baselineCallCount ??
-                                    baseline.calls.filter(call => call.workloadCaseId.startsWith(`${scenarioId}:`))
-                                      .length,
-                                )}
-                              </td>
-                              <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
-                                {formatInteger(row?.baselineGasUsed ?? sumScenarioGas(baseline, scenarioId))}
-                              </td>
-                              {comparison && (
-                                <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
-                                  {formatInteger(row?.revisionGasUsed ?? 0)}
-                                </td>
-                              )}
-                              {comparison && (
-                                <td
-                                  className={`px-4 py-3 text-right font-mono tabular-nums ${row && BigInt(row.gasDeltaRevisionMinusBaseline) < 0n ? "text-emerald-700" : row && BigInt(row.gasDeltaRevisionMinusBaseline) > 0n ? "text-rose-700" : "text-slate-700"}`}
-                                >
-                                  {row ? formatDelta(row.gasDeltaRevisionMinusBaseline) : "—"}
-                                </td>
-                              )}
-                              <td className="px-4 py-3 text-right font-mono tabular-nums text-slate-700">
-                                {formatInteger(edges)}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-                </CardContent>
-              </Card>
-              <Card className="border border-slate-200 !bg-white !p-0 !text-slate-900 shadow-sm">
-                <CardContent className="!p-5">
-                  <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] text-emerald-700">
-                    Evidence summary
-                  </p>
-                  <h2 className="mb-0 mt-2 text-lg font-semibold text-slate-950">Review handoff</h2>
-                  <div className="mt-5 space-y-3 text-sm leading-6 text-slate-700">
-                    <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
-                      <span className="font-medium text-slate-900">Trace coverage:</span> {baseline.traceCoverage} (
-                      {completeTraceCount}/{baseline.calls.length} traces complete)
-                    </p>
-                    {comparison && (
-                      <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
-                        <span className="font-medium text-slate-900">Measured gas delta:</span>{" "}
-                        <span className={gasDelta && BigInt(gasDelta) < 0n ? "text-emerald-700" : "text-slate-700"}>
-                          {gasDelta ? formatDelta(gasDelta) : "—"}
-                        </span>{" "}
-                        across the current local input set.
-                      </p>
-                    )}
-                    <p className="m-0 rounded-md border border-slate-200 bg-slate-50 px-3 py-2.5">
-                      <span className="font-medium text-slate-900">Top repeated slot:</span>{" "}
-                      {heatMapSlots[0]
-                        ? `${shortHash(heatMapSlots[0].slot)} with ${heatMapSlots[0].touches} observed accesses`
-                        : "none observed"}
-                      .
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={!baseline}
-                    onClick={handleCopyHandoff}
-                    className="mt-5 w-full rounded-md border border-blue-200 bg-blue-50 px-4 py-2.5 text-sm font-semibold text-blue-700 transition hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {copyState === "copied"
-                      ? "Copied review handoff"
-                      : copyState === "failed"
-                        ? "Clipboard unavailable"
-                        : "Copy review handoff"}
-                  </button>
-                  <p className="mb-0 mt-3 text-xs leading-5 text-slate-500">
-                    Includes workload, recorded measurements, and the measurement boundary for an engineering review.
-                  </p>
-                </CardContent>
-              </Card>
-            </section>
-
-            <details className="mt-4 rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
-              <summary className="cursor-pointer text-sm font-semibold text-slate-800">
-                Inspect transaction traces ({baseline.calls.length})
-              </summary>
-              <div className="mt-4 divide-y divide-slate-200">
-                {baseline.calls.map(call => (
-                  <details key={call.transactionHash} className="py-3">
-                    <summary className="grid cursor-pointer gap-2 text-xs sm:grid-cols-[minmax(180px,1fr)_160px_105px_120px] sm:items-center">
-                      <span className="text-sm text-slate-800">{call.workloadCaseId}</span>
-                      <code className="text-slate-500" title={call.transactionHash}>
-                        {shortHash(call.transactionHash)}
-                      </code>
-                      <span className="font-mono text-slate-700">{formatInteger(call.gasUsed)} gas</span>
-                      <span className={call.trace.complete ? "text-emerald-700" : "text-amber-700"}>
-                        {call.trace.complete ? `${call.trace.accesses.length} accesses` : "Trace incomplete"}
-                      </span>
-                    </summary>
-                    <div className="mt-3 overflow-x-auto rounded-md border border-slate-200 bg-slate-50">
-                      <table className="w-full min-w-[560px] text-left text-xs">
-                        <thead className="text-slate-500">
-                          <tr>
-                            <th className="px-3 py-2">Operation</th>
-                            <th className="px-3 py-2">Slot</th>
-                            <th className="px-3 py-2">Contract</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {call.trace.accesses.map((access, index) => (
-                            <tr
-                              key={`${access.slot}-${access.programCounter}-${index}`}
-                              className="border-t border-slate-100"
-                            >
-                              <td className="px-3 py-2 font-mono text-slate-700">
-                                {access.opcode} · {access.operation}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-slate-600" title={access.slot}>
-                                {shortHash(access.slot)}
-                              </td>
-                              <td className="px-3 py-2 font-mono text-slate-600" title={access.contractAddress}>
-                                {shortHash(access.contractAddress)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                      {call.trace.warnings.length > 0 && (
-                        <p className="m-0 px-3 py-2 text-amber-800">{call.trace.warnings.join(" ")}</p>
-                      )}
-                    </div>
-                  </details>
-                ))}
-              </div>
-            </details>
-          </>
+          <section id="attestation" className="mt-6 grid gap-5 xl:grid-cols-2">
+            <TestnetDeploymentCard />
+            <AttestationCard report={report} />
+          </section>
         )}
-        <footer className="mt-8 border-t border-slate-200 py-5 text-xs leading-5 text-slate-500">
-          Local EVM measurements · graph-derived properties · Monad Testnet checks stay separate · no Monad scheduler
-          decisions measured
+
+        {/* Footer */}
+        <footer className="mt-12 border-t border-slate-200 py-6 text-center text-xs leading-5 text-slate-500">
+          MProfiler Workbench · Local EVM traces · MIP-8 128-slot logical page model · Directed storage conflict graph ·
+          Monad Testnet bounded validation
         </footer>
       </main>
     </div>
   );
-};
-
-export default MProfilerDashboard;
+}

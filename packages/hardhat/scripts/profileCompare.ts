@@ -21,6 +21,17 @@ export type ProfileComparison = {
     baselineDependencyEdges: number;
     revisionDependencyEdges: number;
   }>;
+  mip8?: {
+    baselineDistinctPages: number;
+    revisionDistinctPages: number;
+    deltaDistinctPages: number;
+    baselineWarmTouches: number;
+    revisionWarmTouches: number;
+    deltaWarmTouches: number;
+    baselineModeledSloadGas: number;
+    revisionModeledSloadGas: number;
+    deltaModeledSloadGas: number;
+  };
   note: string;
 };
 
@@ -61,10 +72,22 @@ export function compareProfileReports(
       gasDeltaRevisionMinusBaseline: (revisionGas - baseGas).toString(),
       baselineCallCount: baseCalls.length,
       revisionCallCount: revisionCalls.length,
-      baselineReadAccesses: baseCalls.reduce((sum, call) => sum + call.trace.accesses.filter(access => access.operation === "read").length, 0),
-      revisionReadAccesses: revisionCalls.reduce((sum, call) => sum + call.trace.accesses.filter(access => access.operation === "read").length, 0),
-      baselineWriteAccesses: baseCalls.reduce((sum, call) => sum + call.trace.accesses.filter(access => access.operation === "write").length, 0),
-      revisionWriteAccesses: revisionCalls.reduce((sum, call) => sum + call.trace.accesses.filter(access => access.operation === "write").length, 0),
+      baselineReadAccesses: baseCalls.reduce(
+        (sum, call) => sum + call.trace.accesses.filter(access => access.operation === "read").length,
+        0,
+      ),
+      revisionReadAccesses: revisionCalls.reduce(
+        (sum, call) => sum + call.trace.accesses.filter(access => access.operation === "read").length,
+        0,
+      ),
+      baselineWriteAccesses: baseCalls.reduce(
+        (sum, call) => sum + call.trace.accesses.filter(access => access.operation === "write").length,
+        0,
+      ),
+      revisionWriteAccesses: revisionCalls.reduce(
+        (sum, call) => sum + call.trace.accesses.filter(access => access.operation === "write").length,
+        0,
+      ),
       baselineDependencyEdges: baseline.dependencyGraph.edges.filter(edge => edge.scenarioId === scenarioId).length,
       revisionDependencyEdges: revision.dependencyGraph.edges.filter(edge => edge.scenarioId === scenarioId).length,
     };
@@ -83,6 +106,21 @@ export function compareProfileReports(
       deltaRevisionMinusBaseline: (revisionGas - baseGas).toString(),
     },
     scenarios,
+    ...(baseline.mip8 && revision.mip8
+      ? {
+          mip8: {
+            baselineDistinctPages: baseline.mip8.distinctPages,
+            revisionDistinctPages: revision.mip8.distinctPages,
+            deltaDistinctPages: revision.mip8.distinctPages - baseline.mip8.distinctPages,
+            baselineWarmTouches: baseline.mip8.warmPageTouches,
+            revisionWarmTouches: revision.mip8.warmPageTouches,
+            deltaWarmTouches: revision.mip8.warmPageTouches - baseline.mip8.warmPageTouches,
+            baselineModeledSloadGas: baseline.mip8.modeledSloadGas,
+            revisionModeledSloadGas: revision.mip8.modeledSloadGas,
+            deltaModeledSloadGas: revision.mip8.modeledSloadGas - baseline.mip8.modeledSloadGas,
+          },
+        }
+      : {}),
     note: "Gas and opcode counts are local EVM measurements. Edge counts are graph-derived. Deltas are descriptive and do not establish Monad scheduler, throughput, or optimization effects.",
   };
 }

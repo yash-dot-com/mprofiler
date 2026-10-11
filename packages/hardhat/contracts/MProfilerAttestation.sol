@@ -20,7 +20,11 @@ contract MProfilerAttestation {
         require(attestations[reportHash].publisher == address(0), "MProfilerAttestation: already attested");
         require(bytes(reportUri).length <= 512, "MProfilerAttestation: URI too long");
 
-        attestations[reportHash] = Attestation({publisher: msg.sender, publishedAt: uint64(block.timestamp), reportUri: reportUri});
+        attestations[reportHash] = Attestation({
+            publisher: msg.sender,
+            publishedAt: uint64(block.timestamp),
+            reportUri: reportUri
+        });
         emit ProfileAttested(reportHash, msg.sender, reportUri);
     }
 

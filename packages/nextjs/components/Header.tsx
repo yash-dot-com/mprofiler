@@ -102,7 +102,10 @@ export const Header = () => {
               >
                 Demo ↗
               </a>
-              <Link href="/profile" className="rounded-xl bg-[#111113] px-4 py-2.5 text-white transition hover:bg-slate-700">
+              <Link
+                href="/profile"
+                className="rounded-xl bg-[#111113] px-4 py-2.5 text-white transition hover:bg-slate-700"
+              >
                 Start profiling
               </Link>
             </nav>

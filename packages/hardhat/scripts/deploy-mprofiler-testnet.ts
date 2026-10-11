@@ -13,14 +13,17 @@ async function deployContract(name: "ProfileWorkloads" | "MProfilerAttestation")
   const receipt = await transaction.wait();
   if (!receipt || receipt.status !== 1) throw new Error(`${name} deployment did not succeed.`);
   const address = await contract.getAddress();
-  if (await ethers.provider.getCode(address) === "0x") throw new Error(`${name} has no bytecode at its receipt address.`);
+  if ((await ethers.provider.getCode(address)) === "0x")
+    throw new Error(`${name} has no bytecode at its receipt address.`);
   return { name, address, transactionHash: receipt.hash, gasUsed: receipt.gasUsed.toString() };
 }
 
 async function main() {
   const chain = await ethers.provider.getNetwork();
   if (chain.chainId !== expectedChainId) {
-    throw new Error(`Refusing deployment: expected Monad Testnet chain ID ${expectedChainId}, received ${chain.chainId}.`);
+    throw new Error(
+      `Refusing deployment: expected Monad Testnet chain ID ${expectedChainId}, received ${chain.chainId}.`,
+    );
   }
   const [signer] = await ethers.getSigners();
   if (!signer) throw new Error("No dedicated Testnet signer is configured.");

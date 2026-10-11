@@ -1,4 +1,5 @@
 import type { ProfileReportCall } from "./profileReport";
+import { analyzeMip8Locality } from "./mip8";
 
 export type StorageAccessEvidence = {
   id: string;
@@ -56,13 +57,17 @@ export function buildProfileGraph(calls: ProfileReportCall[]) {
       const toScenario = calls[toTxIndex].workloadCaseId?.split(":")[0] ?? "default";
       if (fromScenario !== toScenario) continue;
       const laterAccesses = evidence.filter(access => access.txIndex === toTxIndex);
-      const shared = new Map<string, { contractAddress: string; slot: string; evidenceIds: string[]; hasRead: boolean; hasWrite: boolean }>();
+      const shared = new Map<
+        string,
+        { contractAddress: string; slot: string; evidenceIds: string[]; hasRead: boolean; hasWrite: boolean }
+      >();
       for (const write of earlierWrites) {
         const key = `${write.contractAddress}:${write.slot}`;
         const matches = laterAccesses.filter(
-          access => access.contractAddress === write.contractAddress
-            && access.slot === write.slot
-            && (access.mode === "read" || !calls[toTxIndex].trace.reverted),
+          access =>
+            access.contractAddress === write.contractAddress &&
+            access.slot === write.slot &&
+            (access.mode === "read" || !calls[toTxIndex].trace.reverted),
         );
         if (matches.length === 0) continue;
         const item = shared.get(key) ?? {
@@ -89,9 +94,7 @@ export function buildProfileGraph(calls: ProfileReportCall[]) {
         kind: hasRead && hasWrite ? "mixed" : hasWrite ? "write-write" : "write-read",
         sharedSlots: slots.map(({ contractAddress, slot }) => ({ contractAddress, slot })),
         evidenceIds: [...new Set(slots.flatMap(slot => slot.evidenceIds))].sort(),
-        confidence: calls.slice(fromTxIndex, toTxIndex + 1).every(call => call.trace.complete)
-          ? "high"
-          : "medium",
+        confidence: calls.slice(fromTxIndex, toTxIndex + 1).every(call => call.trace.complete) ? "high" : "medium",
         interpretation: "observed-access-derived",
       });
     }
@@ -100,11 +103,19 @@ export function buildProfileGraph(calls: ProfileReportCall[]) {
   const waves: number[] = [];
   for (let index = 0; index < calls.length; index++) {
     const predecessors = edges.filter(edge => edge.toTxIndex === index);
-    waves[index] = predecessors.length === 0
-      ? 0
-      : Math.max(...predecessors.map(edge => waves[edge.fromTxIndex] + 1));
+    waves[index] = predecessors.length === 0 ? 0 : Math.max(...predecessors.map(edge => waves[edge.fromTxIndex] + 1));
   }
-  const hot = new Map<string, { scenarioId: string; contractAddress: string; slot: string; touches: number; callIndexes: Set<number>; edgeCount: number }>();
+  const hot = new Map<
+    string,
+    {
+      scenarioId: string;
+      contractAddress: string;
+      slot: string;
+      touches: number;
+      callIndexes: Set<number>;
+      edgeCount: number;
+    }
+  >();
   for (const access of evidence) {
     const key = `${access.scenarioId}:${access.contractAddress}:${access.slot}`;
     const item = hot.get(key) ?? {
@@ -127,7 +138,13 @@ export function buildProfileGraph(calls: ProfileReportCall[]) {
   }
   const hotSlots = [...hot.values()]
     .filter(slot => slot.callIndexes.size > 1)
-    .sort((a, b) => b.touches - a.touches || a.scenarioId.localeCompare(b.scenarioId) || a.contractAddress.localeCompare(b.contractAddress) || a.slot.localeCompare(b.slot))
+    .sort(
+      (a, b) =>
+        b.touches - a.touches ||
+        a.scenarioId.localeCompare(b.scenarioId) ||
+        a.contractAddress.localeCompare(b.contractAddress) ||
+        a.slot.localeCompare(b.slot),
+    )
     .map(({ scenarioId, contractAddress, slot, touches, callIndexes, edgeCount }) => ({
       scenarioId,
       contractAddress,
@@ -137,11 +154,18 @@ export function buildProfileGraph(calls: ProfileReportCall[]) {
       dependencyEdgeCount: edgeCount,
     }));
 
+  const mip8 = analyzeMip8Locality(calls);
+
   return {
     evidence,
-    nodes: calls.map((call, callIndex) => ({ callIndex, transactionHash: call.transactionHash, wave: waves[callIndex] })),
+    nodes: calls.map((call, callIndex) => ({
+      callIndex,
+      transactionHash: call.transactionHash,
+      wave: waves[callIndex],
+    })),
     edges,
     hotSlots,
     executionDepth: waves.length === 0 ? 0 : Math.max(...waves) + 1,
+    mip8,
   };
 }

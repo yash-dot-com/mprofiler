@@ -3,14 +3,18 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { Card, CardContent } from "~~/components/ui/card";
+import { CompareLens } from "~~/components/mprofiler/CompareLens";
+import { type Mip8Analysis, deriveClientMip8 } from "~~/lib/mprofiler/mip8";
 import { loadStoredProfileResult } from "~~/lib/mprofiler/profileStorage";
 
-type Call = { workloadCaseId: string; trace: { accesses: unknown[] } };
+type TraceAccess = { contractAddress: string; operation: "read" | "write"; slot: string };
+type Call = { workloadCaseId: string; trace: { accesses: TraceAccess[] } };
 type Side = {
+  contract?: { name: string };
   summary: { callCount: number; successfulCalls: number; revertedCalls: number; totalGasUsed: string };
   calls: Call[];
   dependencyGraph: { edges: unknown[]; hotSlots: unknown[]; modeledExecutionDepth: number };
+  mip8?: Mip8Analysis;
 };
 type Scenario = {
   scenarioId: string;
@@ -18,8 +22,11 @@ type Scenario = {
   revisionGasUsed: string;
   gasDeltaRevisionMinusBaseline: string;
   baselineCallCount: number;
+  revisionCallCount: number;
   baselineReadAccesses: number;
+  revisionReadAccesses: number;
   baselineWriteAccesses: number;
+  revisionWriteAccesses: number;
   baselineDependencyEdges: number;
   revisionDependencyEdges: number;
 };
@@ -30,25 +37,21 @@ type Report = {
     workloadIdentical: boolean;
     totalGasUsed: { baseline: string; revision: string; deltaRevisionMinusBaseline: string };
     scenarios: Scenario[];
+    mip8?: {
+      baselineDistinctPages: number;
+      revisionDistinctPages: number;
+      deltaDistinctPages: number;
+      baselineWarmTouches: number;
+      revisionWarmTouches: number;
+      deltaWarmTouches: number;
+      baselineModeledSloadGas: number;
+      revisionModeledSloadGas: number;
+      deltaModeledSloadGas: number;
+    };
     note: string;
   } | null;
 };
 
-const labels: Record<string, string> = {
-  "independent-mapping-writes": "Independent mapping writes",
-  "shared-global-counter-writes": "Shared global-counter writes",
-  "same-key-writes": "Same-key writes",
-  "mixed-reads-writes": "Mixed reads and writes",
-  "read-heavy": "Read-heavy",
-};
-const formatInteger = (value: string | number | bigint) => new Intl.NumberFormat("en-US").format(BigInt(value));
-function formatDelta(value: string) {
-  const delta = BigInt(value);
-  return `${delta < 0n ? "−" : delta > 0n ? "+" : ""}${formatInteger(delta < 0n ? -delta : delta)}`;
-}
-function accessCount(side: Side) {
-  return side.calls.reduce((count, call) => count + call.trace.accesses.length, 0);
-}
 async function readReport(response: Response): Promise<Report> {
   const body = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(typeof body.error === "string" ? body.error : "Could not retrieve this report.");
@@ -64,7 +67,15 @@ export default function ComparisonDashboard() {
   const [restoredFromBrowser, setRestoredFromBrowser] = useState(false);
 
   useEffect(() => {
-    if (!jobId) return;
+    if (!jobId) {
+      // Attempt restoring from local storage if no job query param is provided
+      const saved = loadStoredProfileResult();
+      if (saved?.report) {
+        setReport(saved.report as Report);
+        setRestoredFromBrowser(true);
+      }
+      return;
+    }
     let cancelled = false;
     fetch(`/api/profile/jobs/${jobId}/report`, { cache: "no-store" })
       .then(readReport)
@@ -89,197 +100,97 @@ export default function ComparisonDashboard() {
     };
   }, [jobId]);
 
-  const rows = useMemo(() => report?.comparison?.scenarios ?? [], [report]);
   const baseline = report?.baseline;
   const revision = report?.revision;
   const comparison = report?.comparison;
 
+  const baselineMip8 = useMemo(() => {
+    if (!baseline) return undefined;
+    return baseline.mip8 ?? deriveClientMip8(baseline.calls);
+  }, [baseline]);
+
+  const revisionMip8 = useMemo(() => {
+    if (!revision) return undefined;
+    return revision.mip8 ?? deriveClientMip8(revision.calls);
+  }, [revision]);
+
   return (
-    <div className="mprofiler-page min-h-full bg-[#f6f8fb] text-slate-900">
+    <div className="mprofiler-page min-h-full bg-[#f8fafc] text-slate-900">
       <main className="mx-auto w-full max-w-[1440px] px-4 py-8 sm:px-6 lg:px-8">
         <div className="flex flex-wrap items-end justify-between gap-4 border-b border-slate-200 pb-6">
           <div>
-            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-sky-700">
-              MProfiler · comparison
+            <p className="m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.18em] text-blue-700">
+              MProfiler Workbench · Comparison Lens
             </p>
-            <h1 className="mb-0 mt-2 text-3xl font-semibold tracking-[-0.05em] text-slate-950">
-              Comparable local workload results
+            <h1 className="mb-0 mt-2 text-3xl font-extrabold tracking-tight text-slate-950">
+              Comparable Local Workload Results
             </h1>
             <p className="mb-0 mt-3 max-w-3xl text-sm leading-6 text-slate-600">
-              Both contracts must receive the same generated inputs from the same reset state. This view compares
-              measured local values and derived graph properties only.
+              Both contracts receive identical generated inputs from the same reset state. Compare measured receipt gas,
+              trace storage accesses, conflict graph edges, and MIP-8 128-slot logical page locality.
             </p>
           </div>
           <div className="flex gap-2">
             <Link
-                href="/profile"
-              className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-100"
+              href="/profile"
+              className="rounded-lg border border-slate-300 bg-white px-3.5 py-2 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50"
             >
-              Run profile
+              ← Back to Workbench
             </Link>
             {jobId && (
               <Link
                 href={`/insights?job=${jobId}`}
-                className="rounded-md border border-blue-200 bg-white px-3 py-2 text-sm font-semibold text-blue-700 hover:bg-blue-50"
+                className="rounded-lg bg-blue-700 px-3.5 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-800"
               >
-                Open insights
+                Open Insights & Handoff ✦
               </Link>
             )}
           </div>
         </div>
 
-        {!jobId && (
-          <section className="mt-6 rounded-xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm">
-            <h2 className="text-lg font-semibold text-slate-950">Select a completed profiling job</h2>
-            <p className="mb-0 mt-3 text-sm text-slate-500">
-              Run a local profile with a revision artifact, then open this comparison from the report.
-            </p>
-          </section>
-        )}
         {loading && (
           <p className="mt-6 rounded-lg border border-slate-200 bg-white px-4 py-3 text-sm text-slate-600 shadow-sm">
             Loading completed report…
           </p>
         )}
+
         {error && (
           <p role="alert" className="mt-6 rounded-lg border border-rose-200 bg-rose-50 px-4 py-3 text-sm text-rose-800">
             {error}
           </p>
         )}
-        {restoredFromBrowser && (
-          <p className="mt-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm text-sky-800">
-            Loaded the saved browser copy of this completed report. The worker&apos;s temporary copy is unavailable.
+
+        {restoredFromBrowser && !loading && (
+          <p className="mt-6 rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-xs text-sky-800">
+            Loaded report saved in this browser.
           </p>
         )}
+
+        {!baseline && !loading && !error && (
+          <section className="mt-6 rounded-xl border border-dashed border-slate-300 bg-white px-5 py-12 text-center shadow-sm">
+            <h2 className="text-base font-bold text-slate-950">No Completed Profile Run Found</h2>
+            <p className="mb-0 mt-2 text-xs text-slate-500">
+              Run a local profile with both baseline and revision contracts in the workbench first.
+            </p>
+            <Link
+              href="/profile"
+              className="mt-4 inline-block rounded-lg bg-blue-700 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-800"
+            >
+              Open Workbench
+            </Link>
+          </section>
+        )}
+
         {baseline && (
-          <>
-            {!revision || !comparison ? (
-              <p
-                role="alert"
-                className="mt-6 rounded-lg border border-amber-300/30 bg-amber-400/[0.08] px-4 py-3 text-sm text-amber-100"
-              >
-                This job has no revision report. Run the profile with a compiled revision artifact to create a valid
-                comparison.
-              </p>
-            ) : (
-              <>
-                <section
-                  className={`mt-6 rounded-xl border px-5 py-4 ${comparison.workloadIdentical ? "border-emerald-200 bg-emerald-50" : "border-rose-200 bg-rose-50"}`}
-                >
-                  <p
-                    className={`m-0 font-mono text-[11px] font-semibold uppercase tracking-[0.15em] ${comparison.workloadIdentical ? "text-emerald-700" : "text-rose-700"}`}
-                  >
-                    Workload validity
-                  </p>
-                  <p className="mb-0 mt-2 text-sm leading-6 text-slate-950">
-                    {comparison.workloadIdentical
-                      ? "Valid comparison: baseline and revision reused the canonical generated workload from the same reset state."
-                      : "Invalid comparison: the runner reported different workload inputs. Do not draw conclusions from any delta below."}
-                  </p>
-                </section>
-                <section className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-                  {[
-                    {
-                      label: "Total local gas",
-                      before: baseline.summary.totalGasUsed,
-                      after: revision.summary.totalGasUsed,
-                      delta: comparison.totalGasUsed.deltaRevisionMinusBaseline,
-                    },
-                    {
-                      label: "Successful calls",
-                      before: baseline.summary.successfulCalls,
-                      after: revision.summary.successfulCalls,
-                    },
-                    { label: "Observed accesses", before: accessCount(baseline), after: accessCount(revision) },
-                    {
-                      label: "Derived edges",
-                      before: baseline.dependencyGraph.edges.length,
-                      after: revision.dependencyGraph.edges.length,
-                    },
-                    {
-                      label: "Hot EVM slots",
-                      before: baseline.dependencyGraph.hotSlots.length,
-                      after: revision.dependencyGraph.hotSlots.length,
-                    },
-                  ].map(item => (
-                    <Card key={item.label} className="border border-slate-200 !bg-white !p-0 !text-slate-950 shadow-sm">
-                      <CardContent className="!p-4">
-                        <p className="m-0 text-[11px] uppercase tracking-[0.14em] text-slate-500">{item.label}</p>
-                        <p className="mb-0 mt-3 font-mono text-xl font-semibold">
-                          {formatInteger(item.before)} <span className="text-slate-400">→</span>{" "}
-                          {formatInteger(item.after)}
-                        </p>
-                        {item.delta !== undefined && (
-                          <p
-                            className={`mb-0 mt-2 font-mono text-xs ${BigInt(item.delta) < 0n ? "text-emerald-700" : BigInt(item.delta) > 0n ? "text-rose-700" : "text-slate-500"}`}
-                          >
-                            {formatDelta(item.delta)} gas
-                          </p>
-                        )}
-                      </CardContent>
-                    </Card>
-                  ))}
-                </section>
-                <Card className="mt-4 border border-slate-200 !bg-white !p-0 !text-slate-950 shadow-sm">
-                  <CardContent className="!p-5">
-                    <p className="m-0 font-mono text-[11px] uppercase tracking-[0.15em] text-blue-700">
-                      Scenario deltas
-                    </p>
-                    <h2 className="mb-0 mt-2 text-lg font-semibold">Same generated workload inputs</h2>
-                    <div className="mt-5 overflow-x-auto rounded-lg border border-slate-200">
-                      <table className="w-full min-w-[980px] text-left text-sm">
-                        <thead className="bg-slate-50 text-xs uppercase tracking-[0.1em] text-slate-500">
-                          <tr>
-                            <th className="px-4 py-3">Scenario</th>
-                            <th className="px-4 py-3 text-right">Baseline gas</th>
-                            <th className="px-4 py-3 text-right">Revision gas</th>
-                            <th className="px-4 py-3 text-right">Gas delta</th>
-                            <th className="px-4 py-3 text-right">Read accesses</th>
-                            <th className="px-4 py-3 text-right">Write accesses</th>
-                            <th className="px-4 py-3 text-right">Derived edges</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {rows.map(row => (
-                            <tr key={row.scenarioId} className="border-t border-slate-100">
-                              <th className="px-4 py-3 font-medium text-slate-800">
-                                {labels[row.scenarioId] ?? row.scenarioId}
-                              </th>
-                              <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                {formatInteger(row.baselineGasUsed)}
-                              </td>
-                              <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                {formatInteger(row.revisionGasUsed)}
-                              </td>
-                              <td
-                                className={`px-4 py-3 text-right font-mono ${BigInt(row.gasDeltaRevisionMinusBaseline) < 0n ? "text-emerald-700" : BigInt(row.gasDeltaRevisionMinusBaseline) > 0n ? "text-rose-700" : "text-slate-600"}`}
-                              >
-                                {formatDelta(row.gasDeltaRevisionMinusBaseline)}
-                              </td>
-                              <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                {formatInteger(row.baselineReadAccesses)}
-                              </td>
-                              <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                {formatInteger(row.baselineWriteAccesses)}
-                              </td>
-                              <td className="px-4 py-3 text-right font-mono text-slate-600">
-                                {formatInteger(row.baselineDependencyEdges)} →{" "}
-                                {formatInteger(row.revisionDependencyEdges)}
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    <p className="mb-0 mt-4 text-xs leading-5 text-[#858497]">
-                      Receipt gas and storage accesses are local measurements. Dependency edges are derived from
-                      observed accesses. Neither measures Monad scheduler decisions.
-                    </p>
-                  </CardContent>
-                </Card>
-              </>
-            )}
-          </>
+          <div className="mt-6">
+            <CompareLens
+              comparison={comparison}
+              baselineName={baseline.contract?.name ?? "Baseline"}
+              revisionName={revision?.contract?.name ?? "Revision"}
+              baselineMip8={baselineMip8}
+              revisionMip8={revisionMip8}
+            />
+          </div>
         )}
       </main>
     </div>

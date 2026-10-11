@@ -52,6 +52,7 @@ export type ProfileReport = {
     modeledExecutionDepth: number;
     note: string;
   };
+  mip8?: ReturnType<typeof buildProfileGraph>["mip8"];
   findings: Array<{
     kind: "heuristic" | "trace-backed";
     title: string;
@@ -184,7 +185,7 @@ export function createProfileReport(input: {
       localMeasurements: ["transaction receipt gasUsed", "observed SLOAD/SSTORE trace steps"],
       derivedGraphProperties: ["storage dependency edges", "modeled graph depth", "hot-slot touch and edge counts"],
       monadSpecificEstimates:
-        "None generated. This report does not measure or estimate actual Monad scheduler decisions.",
+        "MIP-8 Page-ified Storage State logical grouping (pageIndex = slot >> 7, offset = slot & 127) and modeled SLOAD cold/warm gas pricing (8,100 / 100 gas).",
     },
     calls: input.calls,
     traceCoverage: input.calls.every(call => call.trace.complete) ? "complete" : "partial",
@@ -196,6 +197,7 @@ export function createProfileReport(input: {
       modeledExecutionDepth: graph.executionDepth,
       note: "Edges and waves are derived from observed opcode accesses in this sequential local workload; they are a dependency model, not Monad scheduler observations or a parallel execution measurement.",
     },
+    mip8: graph.mip8,
     findings: [],
     limitations: [
       "This report covers one isolated local EVM execution. It does not measure Monad Testnet/Mainnet execution or scheduler decisions.",

@@ -400,4 +400,21 @@ describe("MProfiler trace evidence and dependency graph", function () {
     });
     expect(() => compareProfileReports(base, changedInput)).to.throw("workload scenarios");
   });
+
+  it("derives MIP-8 logical pages and modeled cold/warm SLOAD gas", function () {
+    const readSlot0 = access("read", 0);
+    const readSlot1 = access("read", 1);
+    const readSlot128 = access("read", 128);
+
+    const graph = buildProfileGraph([call(0, [readSlot0, readSlot1]), call(1, [readSlot128])]);
+
+    expect(graph.mip8).to.not.equal(undefined);
+    expect(graph.mip8.distinctSlots).to.equal(3);
+    expect(graph.mip8.distinctPages).to.equal(2);
+    expect(graph.mip8.coldPageTouches).to.equal(2);
+    expect(graph.mip8.warmPageTouches).to.equal(1);
+    expect(graph.mip8.modeledSloadGas).to.equal(16300);
+    expect(graph.mip8.legacyPerSlotGas).to.equal(24300);
+    expect(graph.mip8.modeledSavings).to.equal(8000);
+  });
 });

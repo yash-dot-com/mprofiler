@@ -16,6 +16,7 @@ export type InsightDiagnostic = {
   observedEvidence: string[];
   inference: string;
   recommendation: string;
+  validation?: string;
 };
 
 export type AIInsights = {
@@ -82,6 +83,8 @@ export function analyzeSolidity(source: string, evidence: ProfilingEvidence = {}
         inference: `Source inspection found ${variable} and ${writes.length} write expression${writes.length === 1 ? "" : "s"}. Shared state can create overlapping storage access across calls.`,
         recommendation:
           "Check whether one global counter is required. Consider partitioned counters only when they preserve access control, accounting, and all required invariants.",
+        validation:
+          "Re-profile with the identical workload under reset state; verify dependency edges drop to 0 without breaking accounting or invariant checks.",
       });
     }
   }
@@ -105,6 +108,7 @@ export function analyzeSolidity(source: string, evidence: ProfilingEvidence = {}
         inference: `Source inspection found ${usages.length} indexed access sites for ${variable}. Repeated reads and writes to the same key can increase storage work for a workload.`,
         recommendation:
           "Use the profile evidence to identify the actual hot key before changing layout. Preserve mapping-key semantics and verify the same workload after any revision.",
+        validation: "Check whether hot-slot touch count decreases after revision while keeping same functional output.",
       });
     }
   }
@@ -124,6 +128,26 @@ export function analyzeSolidity(source: string, evidence: ProfilingEvidence = {}
         "Source inspection found a computed key. Static source alone cannot identify whether calls overlap on the same resulting storage slot.",
       recommendation:
         "Keep the deterministic workload inputs in the report and compare the resulting observed slots before and after a revision.",
+      validation: "Compare baseline vs revision slot keys in the Storage lens under identical input sequences.",
+    });
+  }
+
+  // MIP-8 Locality diagnostic
+  const structOrMultipleVars = /struct\s+[A-Za-z_][A-Za-z0-9_]*\s*\{/.exec(source);
+  if (structOrMultipleVars?.index !== undefined) {
+    diagnostics.push({
+      code: "MPF-PERF-004",
+      severity: "info",
+      title: "Storage locality: Cluster contiguous variables for MIP-8 page warming",
+      location: locationAt(source, structOrMultipleVars.index, structOrMultipleVars[0].length),
+      observedEvidence: [
+        "Monad MIP-8 groups storage into 128-slot logical pages (4 KB). First access costs 8,100 gas; subsequent accesses to the same page cost 100 gas.",
+      ],
+      inference:
+        "Fields inside a struct or contiguous state variables occupy consecutive slot offsets (offset = slot & 127). Accessing multiple fields in the same call reuses the warmed page.",
+      recommendation:
+        "Pack frequently co-accessed fields in the same struct or sequential state layout to maximize MIP-8 page warmth reuse.",
+      validation: "Verify in the MIP-8 Page Inspector that distinct pages decrease and warm page reuse rate increases.",
     });
   }
 
@@ -151,7 +175,10 @@ export function createCodingAgentHandoff(source: string, report: ContractInsight
               `Observed evidence: ${diagnostic.observedEvidence.join(" ") || "No profiling evidence was attached."}`,
               `Inference: ${diagnostic.inference}`,
               `Suggested action: ${diagnostic.recommendation}`,
-            ].join("\n"),
+              diagnostic.validation ? `Validation: ${diagnostic.validation}` : null,
+            ]
+              .filter(Boolean)
+              .join("\n"),
           )
           .join("\n\n");
   const aiHandoff =

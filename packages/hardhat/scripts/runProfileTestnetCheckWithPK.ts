@@ -22,7 +22,8 @@ async function preflightQuickNode(endpoint: string) {
       });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const payload = (await response.json()) as { result?: unknown; error?: { message?: unknown } };
-      if (payload.error) throw new Error(typeof payload.error.message === "string" ? payload.error.message : "RPC returned an error.");
+      if (payload.error)
+        throw new Error(typeof payload.error.message === "string" ? payload.error.message : "RPC returned an error.");
       if (payload.result !== expectedChainId) throw new Error("RPC returned an unexpected chain ID.");
       return;
     } catch (error) {
@@ -40,7 +41,9 @@ async function main() {
   }
   const endpoint = process.env.QUICKNODE_MONAD_TESTNET_RPC_URL;
   if (!endpoint || !new URL(endpoint).hostname.endsWith(".monad-testnet.quiknode.pro")) {
-    throw new Error("Set QUICKNODE_MONAD_TESTNET_RPC_URL to a QuickNode Monad Testnet endpoint in packages/hardhat/.env.");
+    throw new Error(
+      "Set QUICKNODE_MONAD_TESTNET_RPC_URL to a QuickNode Monad Testnet endpoint in packages/hardhat/.env.",
+    );
   }
 
   await preflightQuickNode(endpoint);

@@ -23,7 +23,9 @@ async function main() {
   const endpoint = process.env.QUICKNODE_MONAD_TESTNET_RPC_URL;
   const encryptedKey = process.env.DEPLOYER_PRIVATE_KEY_ENCRYPTED;
   if (!endpoint || !new URL(endpoint).hostname.endsWith(".monad-testnet.quiknode.pro")) {
-    throw new Error("Set QUICKNODE_MONAD_TESTNET_RPC_URL to a QuickNode Monad Testnet endpoint in packages/hardhat/.env.");
+    throw new Error(
+      "Set QUICKNODE_MONAD_TESTNET_RPC_URL to a QuickNode Monad Testnet endpoint in packages/hardhat/.env.",
+    );
   }
   if (!encryptedKey) throw new Error("No encrypted deployer account found.");
   await preflight(endpoint);

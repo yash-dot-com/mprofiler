@@ -29,16 +29,21 @@ function redactEndpoint(message: string) {
 async function main() {
   const endpoint = process.env.QUICKNODE_MONAD_TESTNET_RPC_URL;
   if (!endpoint || !new URL(endpoint).hostname.endsWith(".monad-testnet.quiknode.pro")) {
-    throw new Error("Set QUICKNODE_MONAD_TESTNET_RPC_URL to a QuickNode Monad Testnet endpoint in packages/hardhat/.env.");
+    throw new Error(
+      "Set QUICKNODE_MONAD_TESTNET_RPC_URL to a QuickNode Monad Testnet endpoint in packages/hardhat/.env.",
+    );
   }
 
   const chain = await ethers.provider.getNetwork();
   if (chain.chainId !== expectedChainId) {
-    throw new Error(`Refusing to deploy: expected Monad Testnet chain ID ${expectedChainId}, received ${chain.chainId}.`);
+    throw new Error(
+      `Refusing to deploy: expected Monad Testnet chain ID ${expectedChainId}, received ${chain.chainId}.`,
+    );
   }
 
   const [signer] = await ethers.getSigners();
-  if (!signer) throw new Error("No Testnet signer is configured. Create or import a dedicated encrypted account first.");
+  if (!signer)
+    throw new Error("No Testnet signer is configured. Create or import a dedicated encrypted account first.");
   const signerAddress = await signer.getAddress();
   const balance = await ethers.provider.getBalance(signerAddress);
   if (balance === 0n) throw new Error("The dedicated Testnet signer has no MON. Fund it before running this check.");
@@ -50,7 +55,8 @@ async function main() {
   const deployReceipt = await deployTransaction.wait();
   if (!deployReceipt || deployReceipt.status !== 1) throw new Error("Probe deployment did not succeed.");
   const contractAddress = await contract.getAddress();
-  if (await ethers.provider.getCode(contractAddress) === "0x") throw new Error("Probe deployment has no code at its receipt address.");
+  if ((await ethers.provider.getCode(contractAddress)) === "0x")
+    throw new Error("Probe deployment has no code at its receipt address.");
 
   const submitted: Array<Record<string, unknown>> = [];
   const traceNewTransaction = async (hash: string) => {
@@ -117,7 +123,9 @@ async function main() {
 
   await mkdir(dirname(reportPath), { recursive: true });
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`);
-  console.log(`Verified one Testnet deployment, three transactions, the ReadObserved event, and four traces. Report: ${reportPath}`);
+  console.log(
+    `Verified one Testnet deployment, three transactions, the ReadObserved event, and four traces. Report: ${reportPath}`,
+  );
 }
 
 main().catch(error => {
